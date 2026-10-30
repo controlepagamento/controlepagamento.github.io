@@ -1,0 +1,3207 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="same-origin">
+<title>Controle de Pagamento</title>
+<link rel="icon" href="logo.png">
+<script>
+// tema salvo neste aparelho (ou o do sistema), aplicado antes de desenhar a página
+(function(){var t='dark';try{t=localStorage.getItem('cp_tema')||(matchMedia('(prefers-color-scheme: light)').matches?'light':'dark');}catch(e){}document.documentElement.setAttribute('data-theme',t);})();
+function alternarTema(){
+  var t=document.documentElement.getAttribute('data-theme')==='light'?'dark':'light';
+  document.documentElement.setAttribute('data-theme',t);
+  try{localStorage.setItem('cp_tema',t);}catch(e){}
+  document.querySelectorAll('.tema-btn').forEach(function(b){b.textContent=t==='light'?'🌙':'☀️';b.title=t==='light'?'Mudar para escuro':'Mudar para claro';});
+}
+document.addEventListener('DOMContentLoaded',function(){var t=document.documentElement.getAttribute('data-theme');document.querySelectorAll('.tema-btn').forEach(function(b){b.textContent=t==='light'?'🌙':'☀️';b.title=t==='light'?'Mudar para escuro':'Mudar para claro';});});
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/dist/umd/supabase.js"></script>
+<script src="config.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg-base:#0e0e0f;--bg-surface:#18181b;--bg-elevated:#232328;--bg-input:#1f1f23;
+  --border:rgba(255,255,255,0.08);--border-hover:rgba(255,255,255,0.18);
+  --text-primary:#f0f0f0;--text-muted:#888;--text-dim:#555;
+  --accent:#e63030;--accent-hover:#c72626;--accent-dim:rgba(230,48,48,0.12);
+  --amber:#f59e0b;--amber-dim:rgba(245,158,11,0.15);
+  --green:#22c55e;--green-dim:rgba(34,197,94,0.12);
+  --blue:#60a5fa;--blue-dim:rgba(96,165,250,0.12);
+  --purple:#c084fc;--purple-dim:rgba(168,85,247,0.12);
+}
+html,body{height:100%;background:var(--bg-base);color:var(--text-primary);font-family:'Inter',system-ui,sans-serif;font-size:14px;line-height:1.5}
+
+/* TOPBAR */
+.topbar{background:var(--bg-surface);border-bottom:1px solid var(--border);padding:0 2rem;height:64px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100}
+.logo{display:flex;align-items:center;gap:12px}
+.logo-badge{background:var(--accent);color:#fff;font-weight:700;font-size:13px;padding:5px 10px;border-radius:6px;letter-spacing:.03em}
+.logo-title{font-size:15px;font-weight:600;color:var(--text-primary)}
+.logo-sub{font-size:11px;color:var(--text-muted)}
+.topbar-actions{display:flex;gap:10px;align-items:center}
+
+/* SUMÁRIO */
+.summary-bar{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;padding:1.5rem 2rem}
+.sum-card{background:var(--bg-surface);border:1px solid var(--border);border-radius:10px;padding:14px 18px;display:flex;flex-direction:column;gap:4px}
+.sum-card .label{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted)}
+.sum-card .value{font-size:20px;font-weight:700;color:var(--text-primary)}
+.sum-card .sub{font-size:11px;color:var(--text-muted)}
+.sum-card.red .value{color:var(--accent)}
+.sum-card.amber .value{color:var(--amber)}
+.sum-card.green .value{color:var(--green)}
+.sum-card.blue .value{color:var(--blue)}
+
+/* TOOLBAR */
+.toolbar{padding:0 2rem 1rem;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.search-wrap{position:relative;flex:1;min-width:200px}
+.search-wrap input{width:100%;background:var(--bg-elevated);border:1px solid var(--border);border-radius:8px;padding:8px 12px 8px 36px;color:var(--text-primary);font-size:13px;outline:none}
+.search-wrap input:focus{border-color:var(--accent)}
+.search-icon{position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--text-dim);font-size:14px}
+select.filter{background:var(--bg-elevated);border:1px solid var(--border);border-radius:8px;padding:8px 12px;color:var(--text-primary);font-size:13px;outline:none;cursor:pointer}
+select.filter:focus{border-color:var(--accent)}
+
+/* MAIN */
+.main{padding:0 2rem 3rem}
+
+/* ENVIO CARD */
+.envio-card{background:var(--bg-surface);border:1px solid var(--border);border-radius:12px;margin-bottom:14px;overflow:hidden;transition:border-color .2s}
+.envio-card:hover{border-color:var(--border-hover)}
+
+.envio-header{display:flex;align-items:center;gap:14px;padding:14px 18px;cursor:pointer;user-select:none}
+.envio-header:hover{background:var(--bg-elevated)}
+.envio-chevron{font-size:12px;color:var(--text-muted);transition:transform .25s;flex-shrink:0}
+.envio-card.open .envio-chevron{transform:rotate(90deg)}
+.envio-date-badge{background:var(--accent-dim);border:1px solid rgba(230,48,48,0.25);color:var(--accent);font-size:12px;font-weight:700;padding:4px 10px;border-radius:20px;white-space:nowrap}
+.envio-title{font-size:14px;font-weight:600;color:var(--text-primary);flex:1}
+.envio-meta{display:flex;gap:16px;align-items:center}
+.envio-count{font-size:12px;color:var(--text-muted)}
+.envio-total{font-size:14px;font-weight:700;color:var(--green)}
+.envio-actions{display:flex;gap:6px;margin-left:8px}
+
+.envio-body{display:none;border-top:1px solid var(--border)}
+.envio-card.open .envio-body{display:block}
+
+/* TABELA */
+.tbl-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th{background:var(--bg-elevated);color:var(--text-muted);font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;padding:8px 12px;text-align:left;white-space:nowrap;border-bottom:1px solid var(--border)}
+td{padding:9px 12px;border-bottom:1px solid var(--border);vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:var(--bg-elevated)}
+
+/* BADGES */
+.badge{display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;white-space:nowrap}
+.badge.material{background:var(--blue-dim);color:#93c5fd;border:1px solid rgba(96,165,250,0.25)}
+.badge.mao{background:var(--purple-dim);color:var(--purple);border:1px solid rgba(168,85,247,0.25)}
+.badge.cinza{background:rgba(120,120,130,0.18);color:#c0c0cc;border:1px solid rgba(180,180,195,0.25)}
+.badge.azul{background:var(--blue-dim);color:var(--blue);border:1px solid rgba(96,165,250,0.35)}
+.badge.sem-oc{background:rgba(120,120,130,0.18);color:#a0a0b0;border:1px solid rgba(160,160,175,0.3)}
+.badge.oc-neg{background:rgba(239,68,68,0.15);color:#f87171;border:1px solid rgba(239,68,68,0.35)}
+.badge.falta-apr{background:var(--purple-dim);color:var(--purple);border:1px solid rgba(168,85,247,0.35)}
+.badge.vencido{background:var(--accent-dim);color:var(--accent);border:1px solid rgba(230,48,48,0.35)}
+.badge.alerta{background:var(--amber-dim);color:var(--amber);border:1px solid rgba(245,158,11,0.35)}
+.badge.pago{background:var(--green-dim);color:var(--green);border:1px solid rgba(34,197,94,0.35)}
+
+.ven-vencido{color:var(--accent);font-weight:700}
+.ven-alerta{color:var(--amber);font-weight:600}
+
+/* CHECK VINCULADO */
+.link-check{width:16px;height:16px;cursor:pointer;accent-color:var(--green)}
+tr.linked-row td{opacity:.5}
+tr.linked-row td.check-cell{opacity:1}
+.envio-linked-count{font-size:12px;color:var(--green);font-weight:600}
+
+/* ICON BTNS */
+.icon-btn{background:none;border:1px solid var(--border);border-radius:6px;color:var(--text-muted);padding:4px 8px;cursor:pointer;font-size:12px;transition:all .15s}
+.icon-btn:hover{background:var(--bg-elevated);border-color:var(--border-hover);color:var(--text-primary)}
+.icon-btn.del:hover{background:var(--accent-dim);border-color:var(--accent);color:var(--accent)}
+.icon-btn.edit:hover{background:var(--blue-dim);border-color:var(--blue);color:var(--blue)}
+
+/* BOTÕES */
+.btn{background:var(--bg-elevated);border:1px solid var(--border);border-radius:8px;color:var(--text-primary);padding:8px 16px;cursor:pointer;font-size:13px;font-weight:500;transition:all .15s;display:inline-flex;align-items:center;gap:6px}
+.btn:hover{border-color:var(--border-hover);background:var(--bg-surface)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.primary:hover{background:var(--accent-hover)}
+.btn.outline-red{border-color:rgba(230,48,48,0.4);color:var(--accent)}
+.btn.outline-red:hover{background:var(--accent-dim)}
+
+/* ESTADO VAZIO */
+.empty-state{text-align:center;padding:4rem 2rem;color:var(--text-muted)}
+.empty-state .icon{font-size:3rem;margin-bottom:1rem}
+.empty-state p{font-size:14px}
+
+/* MODAL */
+.modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:200;align-items:center;justify-content:center;padding:1rem}
+.modal-bg.open{display:flex}
+.modal{background:var(--bg-surface);border:1px solid var(--border);border-radius:14px;padding:1.5rem;width:100%;max-width:560px;max-height:90vh;overflow-y:auto}
+.modal h2{font-size:17px;font-weight:700;margin-bottom:1.2rem;color:var(--text-primary)}
+.form-row{margin-bottom:14px}
+.form-row label{display:block;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px}
+.form-row input,.form-row select,.form-row textarea{width:100%;background:var(--bg-input);border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--text-primary);font-size:13px;outline:none;font-family:inherit}
+.form-row input:focus,.form-row select:focus{border-color:var(--accent)}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.modal-footer{display:flex;justify-content:flex-end;gap:10px;margin-top:1.2rem;padding-top:1rem;border-top:1px solid var(--border)}
+
+/* Form check */
+.form-check{background:var(--bg-elevated);border:1px solid var(--border);border-radius:8px;padding:10px 14px;cursor:pointer;transition:all .15s}
+.form-check:hover{border-color:var(--border-hover)}
+.form-check.active{border-color:var(--accent);background:var(--accent-dim)}
+.form-check input[type=checkbox],.form-check input[type=radio]{display:none}
+.form-check label{display:flex;flex-direction:column;gap:2px;cursor:pointer}
+.form-check label small{font-size:10px;color:var(--text-muted);font-weight:400;text-transform:none;letter-spacing:0}
+
+/* Fase opts */
+.fase-opt label{font-size:12px;font-weight:600}
+.fase-opt#faseAzulBox.active{border-color:var(--blue);background:var(--blue-dim)}
+
+/* OC opts */
+.oc-opt{border-radius:8px}
+.oc-opt label{font-size:11px;font-weight:600;text-transform:none;letter-spacing:0;color:var(--text-primary)}
+.oc-opt#ocSemBox.active{border-color:#a0a0b0;background:rgba(120,120,130,0.18)}
+.oc-opt#ocNegBox.active{border-color:#f87171;background:rgba(239,68,68,0.12)}
+.oc-opt#ocAprBox.active{border-color:var(--purple);background:var(--purple-dim)}
+
+/* Retenção */
+#retencaoPctRow{margin-top:10px}
+
+/* CHIPS */
+.chip{background:var(--bg-elevated);border:1px solid var(--border);border-radius:20px;color:var(--text-muted);padding:4px 12px;font-size:11px;font-weight:600;cursor:pointer;transition:all .15s;white-space:nowrap}
+.chip:hover{border-color:var(--border-hover);color:var(--text-primary)}
+.chip.active{background:var(--accent-dim);border-color:var(--accent);color:var(--accent)}
+.chip-clear{background:none;border:1px solid rgba(245,158,11,0.4);border-radius:20px;color:var(--amber);padding:4px 12px;font-size:11px;font-weight:600;cursor:pointer;transition:all .15s;white-space:nowrap}
+.chip-clear:hover{background:var(--amber-dim)}
+.envio-divider{padding:8px 18px 6px;background:var(--bg-elevated);border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center}
+.envio-divider span{font-size:11px;color:var(--text-muted)}
+.envio-divider strong{font-size:12px;color:var(--text-primary)}
+
+/* ABAS */
+.tabs{display:flex;gap:4px;padding:1rem 2rem 0;border-bottom:1px solid var(--border);margin-bottom:.2rem}
+.tab{background:none;border:none;border-bottom:2px solid transparent;color:var(--text-muted);padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:6px}
+.tab:hover{color:var(--text-primary)}
+.tab.active{color:var(--text-primary);border-bottom-color:var(--accent)}
+.tab-badge{background:var(--amber-dim);color:var(--amber);border:1px solid rgba(245,158,11,0.35);border-radius:10px;font-size:10px;padding:0 6px}
+.tab-badge:empty{display:none}
+
+/* PASTAS DAS OBRAS */
+.pastas-wrap{padding:1.5rem 2rem 3rem}
+.info-card{background:var(--bg-surface);border:1px solid var(--border);border-radius:12px;padding:16px 18px;margin-bottom:14px;line-height:1.7;color:var(--text-muted);font-size:13px}
+.info-card strong{color:var(--text-primary)}
+.path{font-family:ui-monospace,Consolas,monospace;font-size:12px;background:var(--bg-elevated);border:1px solid var(--border);border-radius:6px;padding:2px 8px;color:var(--text-primary);word-break:break-all}
+.pasta-input{width:100%;min-width:320px;background:var(--bg-input);border:1px solid var(--border);border-radius:6px;padding:7px 10px;color:var(--text-primary);font-size:12px;font-family:ui-monospace,Consolas,monospace;outline:none}
+.pasta-input:focus{border-color:var(--accent)}
+.pasta-input::placeholder{color:var(--text-dim);font-family:'Inter',system-ui,sans-serif;font-style:italic}
+.pastas-tbl td:first-child{white-space:nowrap;font-weight:600}
+.modal ol{padding-left:1.2rem;line-height:1.9;font-size:13px;color:var(--text-muted)}
+.modal ol strong{color:var(--text-primary)}
+.vinc-box{background:var(--bg-elevated);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:12.5px;line-height:1.7}
+.vinc-box.ok{border-color:rgba(34,197,94,0.35);color:var(--green)}
+.vinc-box.warn{border-color:rgba(245,158,11,0.35);color:var(--amber)}
+.vinc-box ul{padding-left:1.1rem;color:var(--text-muted)}
+
+/* LOGIN / NUVEM */
+body.bloqueado .app{display:none}
+.login-bg{position:fixed;inset:0;display:none;align-items:center;justify-content:center;padding:16px;background:var(--bg-base);z-index:500}
+.login-bg.open{display:flex}
+.login-card{width:100%;max-width:380px;background:var(--bg-surface);border:1px solid var(--border);border-radius:14px;padding:28px;display:flex;flex-direction:column;gap:14px}
+.login-card .logo-badge{align-self:flex-start}
+.login-card h1{font-size:18px;font-weight:600}
+.login-card p{color:var(--text-muted);font-size:13px;margin-top:-10px}
+.login-card label{display:flex;flex-direction:column;gap:6px;font-size:12px;color:var(--text-muted);font-weight:600}
+.login-card input{background:var(--bg-input);border:1px solid var(--border);border-radius:8px;padding:10px 12px;color:var(--text-primary);font-size:14px;outline:none;font-family:inherit}
+.login-card input:focus{border-color:var(--accent)}
+.login-card .btn{justify-content:center}
+.login-msg{font-size:12.5px;color:var(--accent);min-height:1em}
+.login-link{font-size:12.5px;color:var(--text-muted);text-align:center}
+.topbar{flex-wrap:wrap;height:auto;min-height:64px;gap:10px;padding-top:10px;padding-bottom:10px}
+.topbar-actions{flex-wrap:wrap}
+.nuvem{font-size:12px;color:var(--text-muted);white-space:nowrap}
+.nuvem.ok{color:var(--green)}
+.nuvem.erro{color:var(--accent);cursor:pointer}
+
+/* ENGENHEIROS */
+.eng-input{background:var(--bg-input);border:1px solid var(--border);border-radius:6px;padding:7px 10px;color:var(--text-primary);font-size:13px;font-family:inherit;outline:none;min-width:160px}
+.eng-input:focus{border-color:var(--accent)}
+.eng-obras summary{cursor:pointer;font-size:12.5px;color:var(--text-primary);white-space:nowrap}
+.eng-obras .lista{display:flex;flex-direction:column;gap:5px;padding:8px 2px;max-height:240px;overflow:auto}
+.eng-obras label{display:flex;gap:8px;align-items:center;font-size:12.5px;color:var(--text-muted);cursor:pointer;white-space:nowrap}
+.eng-acoes{display:flex;gap:6px;flex-wrap:nowrap;align-items:center;white-space:nowrap}
+.eng-acoes .btn{white-space:nowrap;flex-direction:row}
+.btn.sm{padding:5px 10px;font-size:12px}
+.eng-novo{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+
+/* ===== TEMA ESCURO / CLARO + GLASS ===== */
+/* --accent = vermelho de alerta (vencido, erro, excluir); --ui = cor de destaque da interface */
+:root,:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg-base:#0b0c0f;
+  --bg-surface:rgba(255,255,255,0.05);
+  --bg-elevated:rgba(255,255,255,0.085);
+  --bg-input:rgba(0,0,0,0.30);
+  --border:rgba(255,255,255,0.10);
+  --border-hover:rgba(255,255,255,0.22);
+  --text-primary:#f2f3f5;--text-muted:#9a9ca4;--text-dim:#60636b;
+  --accent:#ef4444;--accent-hover:#dc2626;--accent-dim:rgba(239,68,68,0.13);
+  --ui:#f2f3f5;--ui-hover:#ffffff;--ui-dim:rgba(255,255,255,0.10);--on-ui:#0b0c0f;
+  --fundo:
+    radial-gradient(900px 620px at 8% -12%, rgba(148,163,184,0.20), transparent 60%),
+    radial-gradient(820px 600px at 108% 6%, rgba(100,116,139,0.18), transparent 60%),
+    radial-gradient(1000px 720px at 50% 118%, rgba(71,85,105,0.24), transparent 62%),
+    #0b0c0f;
+  --topbar-bg:rgba(12,13,16,0.60);
+  --modal-bg:rgba(24,25,30,0.84);
+  --opcao-bg:#16171b;
+  --glass-shadow:0 10px 34px rgba(0,0,0,0.38), inset 0 1px 0 rgba(255,255,255,0.06);
+}
+:root[data-theme="light"]{
+  color-scheme:light;
+  --bg-base:#eef0f3;
+  --bg-surface:rgba(255,255,255,0.62);
+  --bg-elevated:rgba(255,255,255,0.85);
+  --bg-input:rgba(255,255,255,0.90);
+  --border:rgba(15,23,42,0.10);
+  --border-hover:rgba(15,23,42,0.24);
+  --text-primary:#0f172a;--text-muted:#5b6475;--text-dim:#9aa1ad;
+  --accent:#dc2626;--accent-hover:#b91c1c;--accent-dim:rgba(220,38,38,0.10);
+  --amber:#b45309;--amber-dim:rgba(217,119,6,0.13);
+  --green:#15803d;--green-dim:rgba(22,163,74,0.12);
+  --blue:#1d4ed8;--blue-dim:rgba(37,99,235,0.10);
+  --purple:#7e22ce;--purple-dim:rgba(147,51,234,0.10);
+  --ui:#0f172a;--ui-hover:#1e293b;--ui-dim:rgba(15,23,42,0.07);--on-ui:#ffffff;
+  --fundo:
+    radial-gradient(900px 620px at 8% -12%, rgba(148,163,184,0.45), transparent 60%),
+    radial-gradient(820px 600px at 108% 6%, rgba(203,213,225,0.70), transparent 60%),
+    radial-gradient(1000px 720px at 50% 118%, rgba(148,163,184,0.38), transparent 62%),
+    #eef0f3;
+  --topbar-bg:rgba(255,255,255,0.65);
+  --modal-bg:rgba(255,255,255,0.90);
+  --opcao-bg:#ffffff;
+  --glass-shadow:0 10px 30px rgba(15,23,42,0.08), inset 0 1px 0 rgba(255,255,255,0.7);
+}
+html{background:var(--bg-base)}
+body{background:var(--fundo);background-attachment:fixed;min-height:100vh;color:var(--text-primary)}
+.topbar,.sum-card,.envio-card,.info-card,.modal,.login-card,.pin-card,.card,.secao,.obra-card{
+  -webkit-backdrop-filter:blur(18px) saturate(150%);
+  backdrop-filter:blur(18px) saturate(150%);
+  border-color:var(--border);
+  box-shadow:var(--glass-shadow);
+}
+.topbar{background:var(--topbar-bg)}
+.modal{background:var(--modal-bg)}
+.modal-bg{-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+.login-bg,.pin-tela{background:transparent}
+select option{background:var(--opcao-bg);color:var(--text-primary)}
+
+/* destaque da interface sem vermelho/roxo */
+.btn.primary{background:var(--ui);border-color:var(--ui);color:var(--on-ui)}
+.btn.primary:hover{background:var(--ui-hover);border-color:var(--ui-hover)}
+.btn.outline-red{border-color:var(--border);color:var(--text-primary)}
+.btn.outline-red:hover{background:var(--ui-dim)}
+.tab.active{border-bottom-color:var(--ui)}
+.chip.active,.form-check.active{background:var(--ui-dim);border-color:var(--ui);color:var(--text-primary)}
+.envio-date-badge{background:var(--ui-dim);border-color:var(--border);color:var(--text-primary)}
+.obra-card.ativa{border-color:var(--ui);background:linear-gradient(0deg,var(--ui-dim),var(--ui-dim)),var(--bg-surface)}
+input:focus,select:focus,textarea:focus,.pin-input:focus{border-color:var(--ui) !important}
+.lembrar input,.link-check{accent-color:var(--ui)}
+.sum-card.green .value,.card.green .val{color:var(--green)}
+
+/* etiquetas legíveis no tema claro */
+:root[data-theme="light"] .badge.material{color:var(--blue);border-color:rgba(37,99,235,0.25)}
+:root[data-theme="light"] .badge.cinza,:root[data-theme="light"] .badge.sem-oc{background:rgba(100,116,139,0.12);color:#475569;border-color:rgba(100,116,139,0.30)}
+:root[data-theme="light"] .badge.oc-neg{background:var(--accent-dim);color:var(--accent);border-color:rgba(220,38,38,0.30)}
+
+/* botão de tema */
+.tema-btn{background:var(--bg-elevated);border:1px solid var(--border);border-radius:8px;color:var(--text-primary);width:38px;height:36px;cursor:pointer;font-size:16px;display:inline-grid;place-items:center;flex-shrink:0}
+.tema-btn:hover{border-color:var(--border-hover)}
+.tema-flutuante{position:fixed;top:14px;right:14px;z-index:600}
+
+/* logo */
+.logo-foto{width:42px;height:42px;border-radius:50%;flex-shrink:0;position:relative;overflow:hidden;display:grid;place-items:center;
+  background:linear-gradient(135deg,#475569,#94a3b8);
+  box-shadow:0 0 0 2.5px rgba(255,255,255,0.9),0 6px 18px rgba(0,0,0,0.30);
+  transform:rotate(-7deg);transition:transform .25s cubic-bezier(.34,1.56,.64,1)}
+.logo-foto:hover{transform:rotate(8deg) scale(1.08)}
+.logo-foto img{width:100%;height:100%;object-fit:cover;display:block}
+.logo-foto span{display:none;font-weight:700;font-size:14px;color:#fff;letter-spacing:.02em}
+.logo-foto.sem-foto img{display:none}
+.logo-foto.sem-foto span{display:block}
+.logo-foto.grande{width:92px;height:92px;align-self:center;animation:balanca 3.2s ease-in-out infinite}
+.logo-foto.grande span{font-size:28px}
+@keyframes balanca{0%,100%{transform:rotate(-7deg)}50%{transform:rotate(6deg) translateY(-3px)}}
+@media (prefers-reduced-motion:reduce){.logo-foto.grande{animation:none}}
+
+/* ===== VIDRO DE VERDADE: formas no fundo + painéis translúcidos ===== */
+:root,:root[data-theme="dark"]{
+  --forma1:radial-gradient(circle at 30% 30%, #3b82f6, #1e3a8a 70%);
+  --forma2:radial-gradient(circle at 60% 40%, #2dd4bf, #0f766e 70%);
+  --forma3:radial-gradient(circle at 40% 60%, #94a3b8, #334155 70%);
+  --forma-opac:.55;
+  --vidro:rgba(255,255,255,0.06);
+  --vidro-brilho:linear-gradient(135deg, rgba(255,255,255,0.12), rgba(255,255,255,0.02) 45%, rgba(255,255,255,0.00));
+  --vidro-borda:rgba(255,255,255,0.16);
+  --vidro-topo:rgba(255,255,255,0.22);
+  --topbar-bg:rgba(12,13,16,0.35);
+}
+:root[data-theme="light"]{
+  --forma1:radial-gradient(circle at 30% 30%, #93c5fd, #3b82f6 75%);
+  --forma2:radial-gradient(circle at 60% 40%, #99f6e4, #14b8a6 75%);
+  --forma3:radial-gradient(circle at 40% 60%, #e2e8f0, #94a3b8 75%);
+  --forma-opac:.60;
+  --vidro:rgba(255,255,255,0.42);
+  --vidro-brilho:linear-gradient(135deg, rgba(255,255,255,0.75), rgba(255,255,255,0.25) 45%, rgba(255,255,255,0.10));
+  --vidro-borda:rgba(255,255,255,0.75);
+  --vidro-topo:rgba(255,255,255,0.95);
+  --topbar-bg:rgba(255,255,255,0.40);
+  --bg-elevated:rgba(255,255,255,0.55);
+  --bg-input:rgba(255,255,255,0.65);
+}
+html{background:var(--bg-base)}
+body{background:transparent !important}
+.fundo-formas{position:fixed;inset:0;z-index:-1;overflow:hidden;pointer-events:none}
+.fundo-formas i{position:absolute;border-radius:50%;opacity:var(--forma-opac);filter:blur(8px);will-change:transform}
+.fundo-formas i:nth-child(1){width:520px;height:520px;left:-120px;top:-140px;background:var(--forma1);animation:flutua1 26s ease-in-out infinite}
+.fundo-formas i:nth-child(2){width:440px;height:440px;right:-100px;top:28%;background:var(--forma2);animation:flutua2 30s ease-in-out infinite}
+.fundo-formas i:nth-child(3){width:600px;height:600px;left:30%;bottom:-300px;background:var(--forma3);animation:flutua3 34s ease-in-out infinite}
+@keyframes flutua1{0%,100%{transform:translate(0,0)}50%{transform:translate(90px,70px)}}
+@keyframes flutua2{0%,100%{transform:translate(0,0)}50%{transform:translate(-80px,60px)}}
+@keyframes flutua3{0%,100%{transform:translate(0,0)}50%{transform:translate(60px,-70px)}}
+@media (prefers-reduced-motion:reduce){.fundo-formas i{animation:none}}
+
+.topbar,.sum-card,.envio-card,.info-card,.login-card,.pin-card,.card,.secao,.obra-card{
+  background-color:var(--vidro) !important;
+  background-image:var(--vidro-brilho);
+  -webkit-backdrop-filter:blur(22px) saturate(170%);
+  backdrop-filter:blur(22px) saturate(170%);
+  border:1px solid var(--vidro-borda) !important;
+  box-shadow:inset 0 1px 0 var(--vidro-topo), 0 12px 40px rgba(0,0,0,0.22);
+}
+.topbar{background-color:var(--topbar-bg) !important;border-width:0 0 1px 0 !important}
+.obra-card.ativa{background-image:linear-gradient(0deg,var(--ui-dim),var(--ui-dim)),var(--vidro-brilho);border-color:var(--ui) !important}
+.modal{-webkit-backdrop-filter:blur(24px) saturate(160%);backdrop-filter:blur(24px) saturate(160%);background-image:var(--vidro-brilho);border:1px solid var(--vidro-borda)}
+
+/* ===== FUNDO EM GRADE (no lugar das bolas) ===== */
+:root,:root[data-theme="dark"]{
+  --grade-linha:rgba(255,255,255,0.075);
+  --grade-forte:rgba(255,255,255,0.13);
+  --grade-luz:radial-gradient(ellipse 70% 55% at 50% 0%, rgba(255,255,255,0.09), transparent 70%);
+}
+:root[data-theme="light"]{
+  --grade-linha:rgba(15,23,42,0.07);
+  --grade-forte:rgba(15,23,42,0.12);
+  --grade-luz:radial-gradient(ellipse 70% 55% at 50% 0%, rgba(255,255,255,0.9), transparent 70%);
+}
+.fundo-formas i{display:none}
+.fundo-formas{
+  background:
+    var(--grade-luz),
+    linear-gradient(var(--grade-forte) 1px, transparent 1px) 0 0 / 160px 160px,
+    linear-gradient(90deg, var(--grade-forte) 1px, transparent 1px) 0 0 / 160px 160px,
+    linear-gradient(var(--grade-linha) 1px, transparent 1px) 0 0 / 32px 32px,
+    linear-gradient(90deg, var(--grade-linha) 1px, transparent 1px) 0 0 / 32px 32px;
+  -webkit-mask-image:radial-gradient(ellipse 120% 100% at 50% 30%, #000 55%, transparent 100%);
+  mask-image:radial-gradient(ellipse 120% 100% at 50% 30%, #000 55%, transparent 100%);
+}
+</style>
+</head>
+<body class="bloqueado">
+<div class="fundo-formas" aria-hidden="true"><i></i><i></i><i></i></div>
+
+
+<!-- ABRINDO (a entrada por PIN fica na página inicial) -->
+<div class="login-bg open" id="loginBg">
+  <div class="login-card">
+    <div class="logo-foto grande"><img src="logo.png" alt="" onerror="this.parentNode.classList.add('sem-foto')"><span>CP</span></div>
+    <h1>Controle de Pagamento</h1>
+    <p id="lMsg" style="margin-top:0">Abrindo…</p>
+    <a href="./" class="login-link">Voltar para a entrada por PIN</a>
+  </div>
+</div>
+<input type="file" id="fImportArq" accept=".json,.js" style="display:none" onchange="importarArquivo(this)">
+
+<div class="app">
+
+<!-- TOPBAR -->
+<div class="topbar">
+  <div class="logo">
+    <div class="logo-foto"><img src="logo.png" alt="" onerror="this.parentNode.classList.add('sem-foto')"><span>CP</span></div>
+    <div>
+      <div class="logo-title">Controle de Pagamento</div>
+      <div class="logo-sub">Gustavo Ferreira</div>
+    </div>
+  </div>
+  <div class="topbar-actions">
+    <button class="tema-btn" type="button" onclick="alternarTema()">☀️</button>
+    <span class="nuvem" id="nuvemStatus" onclick="if(this.classList.contains('erro')) sincronizar()">☁️ Conectando…</span>
+    <button class="btn" onclick="abrirImportacao()" title="Importar os lançamentos da semana (arquivo gerado pelo Claude) ou migrar o CONTROLE_DADOS.json">📥 Importar arquivo</button>
+    <button class="btn" onclick="salvarNaPasta()" title="Grava CONTROLE_DADOS.json na pasta do Controle (escolha a pasta onde está este HTML)">💾 Salvar na pasta</button>
+    <button class="btn" onclick="openRetorno()" title="Marcar no Controle o que o script vinculou no sistema">↩ Colar retorno</button>
+    <button class="btn outline-red" onclick="gerarPDF()">📄 Relatório PDF</button>
+    <button class="btn primary" onclick="openNovoEnvio()">+ Novo Envio</button>
+    <button class="btn" onclick="trocarPinAdmin()" title="Trocar o seu PIN de administrador">🔑 Meu PIN</button>
+    <button class="btn" onclick="sairAdmin()" title="Sair deste aparelho">Sair</button>
+  </div>
+</div>
+
+<!-- ABAS -->
+<div class="tabs">
+  <button class="tab active" id="tabEnvios" onclick="showTab('envios')">📦 Envios</button>
+  <button class="tab" id="tabPastas" onclick="showTab('pastas')">📁 Pastas das obras <span class="tab-badge" id="pastasBadge" title="Obras sem caminho cadastrado"></span></button>
+  <button class="tab" id="tabEng" onclick="showTab('eng')">👷 Engenheiros</button>
+</div>
+
+<div id="viewEnvios">
+<!-- SUMÁRIO -->
+<div class="summary-bar" id="summaryBar"></div>
+
+<!-- TOOLBAR -->
+<div class="toolbar">
+  <div class="search-wrap">
+    <span class="search-icon">🔍</span>
+    <input type="text" id="searchInput" placeholder="Buscar fornecedor, nº NF, nº OC, obra..." oninput="renderEnvios()">
+    <span class="search-clear" id="searchClear" onclick="clearSearch()" style="display:none;position:absolute;right:10px;top:50%;transform:translateY(-50%);cursor:pointer;color:var(--text-muted);font-size:16px">×</span>
+  </div>
+  <select class="filter" id="filtroObra" onchange="renderEnvios()">
+    <option value="">Todas as obras</option>
+  </select>
+  <select class="filter" id="filtroFase" onchange="renderEnvios()">
+    <option value="">Todas as fases</option>
+    <option value="Cinza">⬜ Fase Cinza</option>
+    <option value="Azul">🟦 Fase Azul</option>
+  </select>
+</div>
+
+<!-- QUICK FILTERS -->
+<div style="padding:0 2rem .8rem;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+  <span style="font-size:11px;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:.05em">Filtros rápidos:</span>
+  <button class="chip" id="chip-semOC"         onclick="toggleChip('semOC')">⚪ Sem OC</button>
+  <button class="chip" id="chip-ocNegativada"   onclick="toggleChip('ocNegativada')">🔴 OC Negativada</button>
+  <button class="chip" id="chip-faltaAprop"     onclick="toggleChip('faltaAprop')">🟣 Falta Apropriação</button>
+  <button class="chip" id="chip-retencao"       onclick="toggleChip('retencao')">📋 Com Retenção</button>
+  <button class="chip" id="chip-maoObra"        onclick="toggleChip('maoObra')">👷 Mão de Obra</button>
+  <button class="chip-clear" id="chipClearAll"  onclick="clearAllChips()" style="display:none">✕ Limpar filtros</button>
+</div>
+
+<!-- RESULTADO DA BUSCA -->
+<div id="searchResultBar" style="display:none;padding:0 2rem .5rem">
+  <div style="background:var(--amber-dim);border:1px solid rgba(245,158,11,0.3);border-radius:8px;padding:8px 14px;font-size:12px;color:var(--amber);display:flex;justify-content:space-between;align-items:center">
+    <span id="searchResultText"></span>
+    <button onclick="clearSearch();clearAllChips()" style="background:none;border:none;color:var(--amber);cursor:pointer;font-size:12px;font-weight:600">Limpar tudo</button>
+  </div>
+</div>
+
+<!-- MAIN -->
+<div class="main" id="mainContent"></div>
+</div>
+
+<!-- ABA: PASTAS DAS OBRAS -->
+<div id="viewPastas" style="display:none"></div>
+<div id="viewEng" style="display:none"></div>
+
+</div>
+
+<!-- ============ MODAL: NOVO ENVIO ============ -->
+<div class="modal-bg" id="modalEnvioBg">
+  <div class="modal" style="max-width:480px">
+    <h2 id="modalEnvioTitle">Novo Envio</h2>
+    <div class="form-row">
+      <label>Data do Envio</label>
+      <input type="date" id="fEnvioData">
+    </div>
+    <div class="form-row">
+      <label>Observação (opcional)</label>
+      <input type="text" id="fEnvioObs" placeholder="Ex: Envio semana 06/08 — Hilton e Rosana">
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModalEnvio()">Cancelar</button>
+      <button class="btn primary" onclick="salvarEnvio()">Criar Envio</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ MODAL: NOVA NF ============ -->
+<div class="modal-bg" id="modalNFBg">
+  <div class="modal">
+    <h2 id="modalNFTitle">Nova NF</h2>
+
+    <!-- Nº OC -->
+    <div class="form-row">
+      <label>Nº OC</label>
+      <input type="text" id="fNum" placeholder="Ex: OC-2025-047" oninput="checkDuplicataOC()">
+      <div id="ocDupWarn" style="display:none;margin-top:6px;padding:8px 10px;background:var(--amber-dim);border:1px solid rgba(245,158,11,0.35);border-radius:6px;font-size:11.5px;color:var(--amber);line-height:1.5"></div>
+    </div>
+    <div class="form-row">
+      <label style="margin-bottom:6px">Situação da OC</label>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+        <div class="form-check oc-opt" id="ocSemBox" onclick="selectOcSit('semOC')">
+          <input type="checkbox" id="fSemOC">
+          <label for="fSemOC">⚪ Sem OC<small>Sem OC vinculada</small></label>
+        </div>
+        <div class="form-check oc-opt" id="ocNegBox" onclick="selectOcSit('ocNegativada')" style="border-color:rgba(248,113,113,0.3)">
+          <input type="checkbox" id="fOcNeg">
+          <label for="fOcNeg">🔴 OC Negativada<small>Saldo insuficiente</small></label>
+        </div>
+        <div class="form-check oc-opt" id="ocAprBox" onclick="selectOcSit('faltaApropriacao')" style="border-color:rgba(192,132,252,0.3)">
+          <input type="checkbox" id="fFaltaApr">
+          <label for="fFaltaApr">🟣 Falta Aprop.<small>Falta Apropriação</small></label>
+        </div>
+      </div>
+    </div>
+
+    <!-- Obra -->
+    <div class="form-row">
+      <label>Obra</label>
+      <select id="fObra" onchange="onObraChange(this);checkDuplicataOC()">
+        <option value="">— Selecionar obra —</option>
+        <option>Hilton e Rosana</option>
+        <option>Clicia e Ricardo</option>
+        <option>Regina e Jose Roberto</option>
+        <option>João Pennacchi</option>
+        <option>Richard Vinhosa</option>
+        <option>Iporanga Fase 2</option>
+        <option>Juliana e Thiago</option>
+        <option>Ana Luiza e Vitor</option>
+        <option>Humberto Avila</option>
+        <option value="__nova__">+ Cadastrar nova obra...</option>
+      </select>
+      <input type="text" id="fObraCustom" placeholder="Nome da obra" style="display:none;margin-top:6px" oninput="checkDuplicataOC()">
+    </div>
+
+    <!-- Fase -->
+    <div class="form-row">
+      <label>Fase da obra</label>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div class="form-check fase-opt" id="faseCinzaBox" onclick="selectFase('Cinza')">
+          <input type="radio" name="fFase" id="fFaseCinza" value="Cinza">
+          <label for="fFaseCinza">⬜ Fase Cinza<small>MpH paga</small></label>
+        </div>
+        <div class="form-check fase-opt" id="faseAzulBox" onclick="selectFase('Azul')">
+          <input type="radio" name="fFase" id="fFaseAzul" value="Azul">
+          <label for="fFaseAzul">🟦 Fase Azul<small>Cliente paga</small></label>
+        </div>
+      </div>
+    </div>
+
+    <div class="form-row">
+      <label>Fornecedor / Empresa</label>
+      <input type="text" id="fForn" placeholder="Nome do fornecedor">
+    </div>
+
+    <!-- Tipo -->
+    <div class="form-row">
+      <label>Tipo de despesa</label>
+      <select id="fTipo" onchange="onTipoChange()">
+        <option value="Material">📦 Material</option>
+        <option value="Mão de obra">👷 Mão de obra</option>
+      </select>
+    </div>
+
+    <!-- Retenção -->
+    <div class="form-row" id="retencaoRow" style="display:none">
+      <div class="form-check" id="retencaoBox" onclick="toggleRetencaoForm()">
+        <input type="checkbox" id="fRetencao">
+        <label for="fRetencao">Retenção sobre mão de obra<small>Marque se houver retenção e informe a % abaixo</small></label>
+      </div>
+      <div id="retencaoPctRow" style="display:none">
+        <label style="display:block;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin:8px 0 6px">% de Retenção</label>
+        <input type="number" id="fRetPct" placeholder="Ex: 11" step="0.1" min="0" max="100" value="11" style="width:120px">
+      </div>
+    </div>
+
+    <div class="form-grid">
+      <div class="form-row">
+        <label>Tipo de documento</label>
+        <select id="fTipoDoc">
+          <option value="NF">Nota Fiscal</option>
+          <option value="Recibo">Recibo</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <label>Nº do documento</label>
+        <input type="text" id="fNumDoc" placeholder="Ex: 12345">
+      </div>
+    </div>
+    <div class="form-grid">
+      <div class="form-row">
+        <label>Valor (R$)</label>
+        <input type="number" id="fVal" placeholder="0,00" step="0.01" min="0">
+      </div>
+      <div class="form-row">
+        <label>Data de Vencimento</label>
+        <input type="date" id="fVen">
+      </div>
+    </div>
+    <div class="form-row">
+      <label>Forma de pagamento</label>
+      <select id="fFormaPag">
+        <option value="Transferência">Transferência</option>
+        <option value="Boleto">Boleto</option>
+      </select>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModalNF()">Cancelar</button>
+      <button class="btn primary" onclick="salvarNF()">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ MODAL: PDF ============ -->
+<div class="modal-bg" id="pdfModalBg">
+  <div class="modal" style="max-width:440px">
+    <h2>Gerar Relatório PDF</h2>
+    <div class="form-row">
+      <label>Filtrar por Envio</label>
+      <select id="pdfFiltroEnvio">
+        <option value="">Todos os envios</option>
+      </select>
+    </div>
+
+    <!-- Toggle PDF por obra -->
+    <div class="form-row">
+      <div class="form-check" id="pdfPorObraBox" onclick="togglePdfPorObra()" style="border-color:rgba(96,165,250,0.3)">
+        <input type="checkbox" id="pdfPorObra">
+        <label for="pdfPorObra" style="flex-direction:row;align-items:center;gap:10px">
+          <span style="font-size:20px">📁</span>
+          <span>
+            <strong style="font-size:13px;color:var(--text-primary)">Um PDF por obra</strong>
+            <small style="display:block;margin-top:2px">Gera um arquivo separado para cada obra automaticamente</small>
+          </span>
+        </label>
+      </div>
+    </div>
+
+    <!-- Filtro de obra (só aparece quando NÃO está no modo por obra) -->
+    <div class="form-row" id="pdfFiltroObraRow">
+      <label>Filtrar por Obra</label>
+      <select id="pdfFiltroObra">
+        <option value="">Todas as obras (arquivo único)</option>
+      </select>
+    </div>
+
+    <div style="background:var(--bg-elevated);border:1px solid var(--border);border-radius:8px;padding:12px 14px;margin-bottom:1rem;font-size:12px;color:var(--text-muted);line-height:2" id="pdfInfoBox">
+      <div>📄 <strong style="color:var(--text-primary)">Arquivo único</strong> — todas as obras no mesmo PDF</div>
+      <div style="font-size:11px;padding-left:1.2rem">A Regularizar · Pagamentos da Semana · Vencidos</div>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn" onclick="closePdfModal()">Cancelar</button>
+      <button class="btn primary" id="pdfGerarBtn" onclick="confirmarPDF()">📄 Gerar PDF</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ MODAL: VINCULAR NO SISTEMA ============ -->
+<div class="modal-bg" id="modalVincBg">
+  <div class="modal" style="max-width:600px">
+    <h2 id="vincTitle">Vincular no sistema</h2>
+    <div id="vincBody"></div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeVinc()">Fechar</button>
+      <button class="btn primary" onclick="copiarDeNovo()">📋 Copiar script de novo</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ MODAL: RETORNO ============ -->
+<div class="modal-bg" id="modalRetBg">
+  <div class="modal" style="max-width:520px">
+    <h2>↩ Colar retorno do sistema</h2>
+    <p style="font-size:12.5px;color:var(--text-muted);margin-bottom:10px">No fim do vínculo, clique em <strong style="color:var(--text-primary)">📋 Copiar retorno para o Controle</strong> no painel do sistema e cole aqui. Os lançamentos vinculados ficam marcados com ✓ e os arquivados com 📁.</p>
+    <div class="form-row">
+      <textarea id="fRetorno" rows="6" placeholder='{"tipo":"mph-retorno-vinculo", ...}' style="font-family:ui-monospace,Consolas,monospace;font-size:11.5px"></textarea>
+    </div>
+    <div id="retornoMsg" style="font-size:12px;color:var(--accent);min-height:1em"></div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeRetorno()">Cancelar</button>
+      <button class="btn" onclick="colarRetornoClipboard()">Colar da área de transferência</button>
+      <button class="btn primary" onclick="aplicarRetorno()">Aplicar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Script que roda no sistema (preenchido com os dados do envio ao clicar em Vincular) -->
+<script type="text/plain" id="tplVincular">
+// ============================================================
+// Vincular NFs no sistema + arquivar na pasta das obras
+// Gerado pelo Controle de Envios (MpH Engenharia).
+// Cole no Console (F12) com novo.sistemamphengenharia.com aberto e logado.
+// ============================================================
+(async () => {
+
+const DADOS = /*__DADOS__*/null;
+
+if (!DADOS || !DADOS.lista || !DADOS.lista.length) { console.warn('Nenhum lançamento neste script.'); return; }
+const SO_ARQUIVAR = DADOS.modo === 'arquivar';
+if (!SO_ARQUIVAR && !/sistemamphengenharia/i.test(location.hostname)) { alert('Cole este script com o sistema da MpH aberto (novo.sistemamphengenharia.com).'); return; }
+if (!window.showDirectoryPicker) { alert('Este navegador não permite escolher pastas. Use o Chrome ou o Edge no computador.'); return; }
+
+const LISTA = DADOS.lista;
+const NAO_ARQUIVAR = new Set(DADOS.naoArquivar || []);
+const precisaArquivar = LISTA.some(it => !NAO_ARQUIVAR.has(it.obra));
+
+// ---- FUNÇÕES AUXILIARES ------------------------------------
+const FASES = {
+  CINZA: { nome: 'Cinza', base: location.origin + '/notasFiscais',    tela: 'vinculacao',    filtro: 'vinculacaoFiltro',    pagOc: 'vincularOc',    form: 'vincularNfOc' },
+  AZUL:  { nome: 'Azul',  base: location.origin + '/notasFiscaisAdm', tela: 'vinculacaoadm', filtro: 'vinculacaoadmFiltro', pagOc: 'vincularOcAdm', form: 'vincularNfOcAdm' },
+};
+const faseDe = it => norm(it.fase) === 'AZUL' ? FASES.AZUL : FASES.CINZA;
+const MESES = ['JANEIRO', 'FEVEREIRO', 'MARÇO', 'ABRIL', 'MAIO', 'JUNHO', 'JULHO', 'AGOSTO', 'SETEMBRO', 'OUTUBRO', 'NOVEMBRO', 'DEZEMBRO'];
+const norm = s => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/\s+/g, ' ').trim();
+const paraNumero = v => {
+  if (typeof v === 'number') return v;
+  const s = String(v ?? '').replace(/[^\d,.-]/g, '');
+  if (s.includes(',')) return Number(s.replace(/\./g, '').replace(',', '.'));   // 1.743,01
+  if (/^-?\d+\.\d{1,2}$/.test(s)) return Number(s);                           // 1743.01
+  return Number(s.replace(/\./g, ''));                                           // 1.743 / 1743
+};
+const paraBRL = v => paraNumero(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const paraISO = d => /^\d{2}\/\d{2}\/\d{4}$/.test(String(d)) ? String(d).split('/').reverse().join('-') : String(d ?? '');
+const paraBR = d => paraISO(d).split('-').reverse().join('/');
+const nfNum = v => String(v ?? '').replace(/\D/g, '').replace(/^0+/, '');
+// "278596-2" (parcela) também conta como NF 278596
+const mesmaNota = (nota, nf) => nfNum(nota) === nfNum(nf) ||
+  nfNum(String(nota ?? '').replace(/\s*-\s*\d{1,2}\s*$/, '')) === nfNum(nf);
+const lerHTML = t => new DOMParser().parseFromString(t, 'text/html');
+const espera = ms => new Promise(r => setTimeout(r, ms));
+const IGNORAR = new Set(['LTDA', 'EIRELI', 'COMERCIO', 'MATERIAIS', 'MATERIAL', 'CONSTRUCAO', 'CONSTRUCOES',
+  'SERVICOS', 'INDUSTRIA', 'DISTRIBUIDORA', 'EPP', 'DOS', 'DAS', 'COM', 'IND']);
+const palavrasForn = s => norm(s).split(/[^A-Z0-9]+/).filter(p => p.length >= 3 && !IGNORAR.has(p));
+const tipoArquivo = nome => {
+  const n = norm(nome);
+  if (/BOLETO/.test(n)) return 'BOLETO';
+  if (/RECIBO/.test(n)) return 'RECIBO';
+  if (/\b(RELATORIO|ORCAMENTO|MEDICAO|PROPOSTA|COMPROVANTE)\b/.test(n)) return 'OUTRO';
+  return 'NF';   // NF, DANFE, Fatura...
+};
+// "Arquivo (copia).pdf", "Arquivo - Copia.pdf", "Arquivo (1).pdf"
+const ehCopia = nome => /\(\s*c[oó]pia\s*\d*\s*\)|\s-\s*c[oó]pia\b|\(\d+\)\s*\.pdf$/i.test(nome);
+const segmentos = p => String(p || '').trim().replace(/^["']|["']$/g, '').split(/[\\/]+/).map(s => s.trim()).filter(Boolean);
+
+const linhasTabela = doc => [...doc.querySelectorAll('table tbody tr')]
+  .map(tr => [...tr.cells].map(td => td.textContent.trim()));
+
+// Fase Azul: tabela de NFs já vinculadas tem uma linha por CC; colunas achadas pelo cabeçalho
+function linhasNFsAzul(doc) {
+  const t = [...doc.querySelectorAll('table')].find(t =>
+    [...t.querySelectorAll('thead th')].some(th => norm(th.textContent).includes('NOTA/PARCELA')));
+  if (!t) return [];
+  const cab = [...t.querySelectorAll('thead th')].map(th => norm(th.textContent));
+  const iN = cab.findIndex(h => h.includes('NOTA/PARCELA')), iV = cab.findIndex(h => h.includes('VENCIMENTO')), iR = cab.indexOf('VALOR');
+  return [...t.querySelectorAll('tbody tr')].map(tr => {
+    const c = [...tr.cells].map(td => td.textContent.trim());
+    return c.length > Math.max(iN, iV, iR) ? { nota: c[iN], venc: c[iV], valor: paraNumero(c[iR]) } : null;
+  }).filter(Boolean);
+}
+// vínculos da OC agrupados por NF + vencimento (na Azul soma os CCs)
+function vinculosDaOC(doc, fase) {
+  if (fase !== FASES.AZUL)
+    return linhasTabela(doc).filter(c => c.length >= 5).map(c => ({ nota: c[0], venc: c[3], valor: paraNumero(c[4]) }));
+  const m = new Map();
+  for (const l of linhasNFsAzul(doc)) {
+    const k = nfNum(l.nota) + '|' + l.venc;
+    const a = m.get(k) || { nota: l.nota, venc: l.venc, valor: 0 };
+    a.valor += l.valor || 0;
+    m.set(k, a);
+  }
+  return [...m.values()];
+}
+// "12345-2" → NF 12345, parcela 2
+const nfBase = s => String(s ?? '').trim().replace(/\s*-\s*\d{1,2}\s*$/, '');
+const parcelaDe = s => { const m = String(s ?? '').trim().match(/\d\s*-\s*(\d{1,2})\s*$/); return m ? Number(m[1]) : null; };
+
+// mesma NF + mesmo vencimento + mesmo valor = parcela já vinculada
+const jaVinculada = (doc, it, fase) => vinculosDaOC(doc, fase).some(v =>
+  mesmaNota(v.nota, nfBase(it.nf)) && v.venc === paraBR(it.vencimento) && Math.abs(v.valor - paraNumero(it.valor)) < 0.01);
+
+// Nº da nota no vínculo (Cinza e Azul): o sistema não aceita o mesmo nº em dois vínculos.
+// NF com uma cobrança → "12345"; com várias → "12345-1", "12345-2"... pela ordem de vencimento
+// (parcelas já vinculadas nesta OC + as deste envio). Se o Controle já trouxer "12345-2", vale como está.
+function notaParcela(doc, it, fase) {
+  const base = fase === FASES.CINZA ? nfNum(nfBase(it.nf)) : nfBase(it.nf);
+  const explicita = parcelaDe(it.nf);
+  if (explicita != null) return `${base}-${explicita}`;
+  const iso = d => paraISO(d);
+  const vencs = new Set(vinculosDaOC(doc, fase).filter(v => mesmaNota(v.nota, base)).map(v => iso(v.venc)));
+  LISTA.filter(o => faseDe(o) === fase && nfNum(o.oc) === nfNum(it.oc) && nfNum(nfBase(o.nf)) === nfNum(base))
+    .forEach(o => vencs.add(iso(o.vencimento)));
+  vencs.add(iso(it.vencimento));
+  const ordem = [...vencs].sort();
+  return ordem.length > 1 ? `${base}-${ordem.indexOf(iso(it.vencimento)) + 1}` : base;
+}
+
+// Boleto desta parcela: pelo nº "12345-2" no nome; senão pela data de vencimento no início do nome
+// ("30-10-26 Boleto ..."); senão, se só existe um boleto e a NF tem uma cobrança só, é ele.
+function boletoDaParcela(docs, it, nota) {
+  const lista = docs.boletos || [];
+  if (!lista.length || docs.soBoleto) return null;
+  const semData = nome => nome.replace(/^\s*\d{2}-\d{2}-\d{2,4}\s*/, '');
+  const parc = parcelaDe(nota);
+  const base = nfNum(nfBase(it.nf));
+  if (parc != null) {
+    const re = new RegExp(`(^|\\D)0*${base}\\s*-\\s*0*${parc}(\\D|$)`);
+    const b = lista.filter(a => re.test(semData(a.nome)));
+    if (b.length === 1) return b[0];
+  }
+  const [y, m, d] = paraISO(it.vencimento).split('-');
+  if (y && m && d) {
+    const re2 = new RegExp(`^\\s*${d}-${m}-(${y}|${y.slice(2)})(\\D|$)`);
+    const b = lista.filter(a => re2.test(a.nome));
+    if (b.length === 1) return b[0];
+  }
+  if (lista.length === 1 && parc == null) return lista[0];
+  return null;
+}
+
+// Fase Azul: divide o valor entre os CCs da OC pela proporção que o próprio sistema informa
+function montarRateio(doc, valor) {
+  const t = [...doc.querySelectorAll('table')].find(t => norm(t.querySelector('thead th')?.textContent) === 'CC');
+  const linhas = t ? [...t.querySelectorAll('tbody tr')].map(tr => [...tr.cells].map(td => {
+    const campo = td.querySelector('input, select, textarea');
+    return campo ? campo.value : td.textContent.trim();
+  })).filter(c => c.length >= 7 && c[0]) : [];
+  if (!linhas.length) throw new Error('não consegui ler os centros de custo desta OC — faça esta NF pela tela');
+  let props = linhas.map(c => Number(c[6]));
+  const soma = props.reduce((a, b) => a + (b || 0), 0);
+  if (!(soma > 0.99 && soma < 1.01)) {             // sem proporção: usa o apropriado de cada CC
+    const ap = linhas.map(c => Number(c[2]) || 0), s = ap.reduce((a, b) => a + b, 0);
+    props = ap.map(a => s ? a / s : 1 / linhas.length);
+  }
+  const total = Math.round(paraNumero(valor) * 100);
+  const cents = props.map(p => Math.round(total * p));
+  cents[props.indexOf(Math.max(...props))] += total - cents.reduce((a, b) => a + b, 0);   // ajuste de centavos
+  const avisos = [];
+  linhas.forEach((c, i) => {
+    c[4] = paraBRL(cents[i] / 100);
+    if (cents[i] / 100 > paraNumero(c[3]) + 0.01) avisos.push(`CC ${c[0]} fica com R$ ${c[4]}, mas tem só R$ ${c[3]} disponível`);
+  });
+  return { json: JSON.stringify(linhas), n: linhas.length, avisos, resumo: linhas.map(c => `${c[0]}: R$ ${c[4]}`).join(' · ') };
+}
+
+function fornecedorConfere(doControle, daOC) {
+  const palavras = palavrasForn(doControle);
+  if (!palavras.length || !daOC) return true;
+  const oc = norm(daOC);
+  return palavras.some(p => oc.includes(p));
+}
+
+// ---- ARQUIVOS DA PASTA DA SEMANA ---------------------------
+async function listarPDFs(dir, pastas = []) {
+  const out = [];
+  for await (const [nome, h] of dir.entries()) {
+    if (h.kind === 'directory') out.push(...await listarPDFs(h, [...pastas, nome]));
+    else if (/\.pdf$/i.test(nome)) out.push({ nome, handle: h, pastas });
+  }
+  return out;
+}
+// pastas da semana que nunca entram (separadas de propósito)
+const PASTAS_FORA = /^(DUPLICADOS?|DESCONSIDERADOS?|REMOVIDOS?\b.*)$/;
+// mesma obra? ("OBRA MAMADE" x "MAMEDE", "OBRA ITARUMÃ" x "ITARUMÃ ADMINISTRAÇÃO E PARTICIPAÇÕES LTDA")
+function obraConfere(a, b) {
+  const ta = tokensObra(a).filter(t => t.length >= 3), tb = tokensObra(b).filter(t => t.length >= 3);
+  if (!ta.length || !tb.length) return true;
+  return ta.some(x => tb.some(y => x === y || (x.length >= 5 && y.length >= 5 && distancia(x, y) <= 1)));
+}
+// só os PDFs da pasta da obra (se a semana estiver separada por obra); nunca de outra obra
+function arquivosDaObra(arquivos, obra) {
+  const validos = arquivos.filter(a => !a.pastas.some(p => PASTAS_FORA.test(norm(p))));
+  if (!obra) return validos;
+  const ehDaObra = p => { const t = tokensObra(p); const o = tokensObra(obra);
+    return t.length && o.length && (t.every(x => o.includes(x)) || o.every(x => t.includes(x)) || norm(p) === norm(obra)); };
+  const daObra = validos.filter(a => a.pastas.some(ehDaObra));
+  if (daObra.length) return daObra;
+  return validos;   // semana sem pasta dessa obra (PDFs soltos)
+}
+
+function acharDocs(todos, it) {
+  const arquivos = arquivosDaObra(todos, it.obra);
+  const bruto = String(it.nf ?? '').trim();
+  if (!nfNum(bruto)) throw new Error('número do documento vazio');
+  // "9143-6" também procura "9143"; "120503-02" também "120503"
+  const numeros = [...new Set([nfNum(bruto), nfNum(bruto.replace(/\s*[-\/]\s*\d{1,2}\s*$/, ''))].filter(n => n.length >= 3 || n === nfNum(bruto)))];
+  const semData = nome => nome.replace(/^\s*\d{2}-\d{2}-\d{2,4}\s*/, '');
+  // nº curto ("1", "7"): só vale como palavra solta ("Recibo 1 X"), nunca "204-1" ou "1685"
+  const temNumero = nome => numeros.some(n => new RegExp(n.length >= 3 ? `(^|\\D)0*${n}(\\D|$)` : `(^|\\s)0*${n}(\\s|\\.pdf$|$)`, 'i').test(semData(nome)));
+  const palavras = palavrasForn(it.fornecedor);
+  const doFornecedor = a => palavras.some(p => norm(a.nome).includes(p));
+  const refinar = lista => {
+    if (lista.length > 1 && palavras.length) { const f = lista.filter(doFornecedor); if (f.length) lista = f; }
+    if (lista.length > 1) { const orig = lista.filter(a => !ehCopia(a.nome)); if (orig.length) lista = orig; }   // ignora cópias
+    return lista;
+  };
+  const ehRecibo = norm(it.tipo) === 'RECIBO';
+  const tipoDoc = ehRecibo ? 'RECIBO' : 'NF';
+  const cand = arquivos.filter(a => temNumero(a.nome));
+  let doc = refinar(cand.filter(a => tipoArquivo(a.nome) === tipoDoc));
+  if (!doc.length && ehRecibo) doc = refinar(cand.filter(a => tipoArquivo(a.nome) === 'NF'));
+  let peloFornecedor = false, soBoleto = false;
+  if (!doc.length) {
+    // só existe o boleto com esse número (comum em locação/serviço): usa o boleto como documento
+    const b = refinar(cand.filter(a => tipoArquivo(a.nome) === 'BOLETO' && (!palavras.length || doFornecedor(a))));
+    if (b.length) { doc = [b[0]]; soBoleto = true; }
+  }
+  if (!doc.length && palavras.length) {
+    // sem o número no nome: tenta pelo fornecedor (só se houver um único PDF desse tipo dele)
+    // só arquivos SEM nenhum número no nome (fora a data), para não pegar a NF de outro número
+    const f = arquivos.filter(a => doFornecedor(a) && [tipoDoc, 'NF'].includes(tipoArquivo(a.nome)) && !ehCopia(a.nome) &&
+      !/\d{3,}/.test(semData(a.nome)));
+    if (f.length === 1) { doc = f; peloFornecedor = true; }
+    else if (f.length > 1) throw new Error(`PDF ${ehRecibo ? 'do recibo' : 'da NF'} ${bruto} não encontrado pelo número; do fornecedor há: ${f.slice(0, 4).map(a => a.nome).join(', ')}`);
+  }
+  if (!doc.length) {
+    // mostra os arquivos mais parecidos para facilitar achar o problema no nome
+    const parecidos = arquivos.filter(a => doFornecedor(a) || numeros.some(n => n.length >= 3 && nfNum(a.nome).includes(n))).slice(0, 4).map(a => a.nome);
+    throw new Error(`PDF ${ehRecibo ? 'do recibo' : 'da NF'} ${bruto} não encontrado na pasta da semana` +
+      (parecidos.length ? ` (parecidos: ${parecidos.join(', ')})` : ' (nenhum arquivo com esse número ou fornecedor)'));
+  }
+  if (doc.length > 1) throw new Error('mais de um PDF com esse número: ' + doc.map(a => a.nome).join(', '));
+  return {
+    doc: doc[0], peloFornecedor, soBoleto,
+    boletos: refinar(cand.filter(a => tipoArquivo(a.nome) === 'BOLETO')).filter(a => a !== doc[0]),
+    extras: cand.filter(a => tipoArquivo(a.nome) === 'OUTRO' && !ehCopia(a.nome) && (!palavras.length || doFornecedor(a)))
+  };
+}
+
+// ---- PASTAS DAS OBRAS --------------------------------------
+async function resolverPastaObra(raiz, caminho) {
+  const s = segmentos(caminho);
+  if (!s.length) throw new Error('caminho da obra não cadastrado na aba Pastas das obras');
+  const i = s.findIndex(x => norm(x) === norm(raiz.name));
+  if (i < 0) throw new Error(`o caminho cadastrado não passa pela pasta selecionada ("${raiz.name}")`);
+  let dir = raiz;
+  for (const nome of s.slice(i + 1)) {
+    try { dir = await dir.getDirectoryHandle(nome); }
+    catch (e) { throw new Error(`pasta "${nome}" não encontrada (confira o caminho ou a sincronização do OneDrive)`); }
+  }
+  if (!/^18\b/.test(dir.name.trim())) {
+    let achou = null;
+    for await (const [nome, h] of dir.entries()) {
+      if (h.kind === 'directory' && /^18\s*-/.test(nome.trim())) { achou = h; break; }
+    }
+    if (!achou) throw new Error('pasta "18 - Notas Fiscais" não encontrada no caminho');
+    dir = achou;
+  }
+  return dir;
+}
+
+async function pastaDoMes(dir18, dataISO) {
+  const m = Number(String(dataISO).slice(5, 7));
+  const re = new RegExp(`^0?${m}\\s*-`);
+  for await (const [nome, h] of dir18.entries()) {
+    if (h.kind === 'directory' && re.test(nome.trim())) return h;
+  }
+  return dir18.getDirectoryHandle(`${m} - ${MESES[m - 1]}`, { create: true });
+}
+
+async function copiar(arq, destino) {
+  try { await destino.getFileHandle(arq.nome); return false; } catch (e) { /* não existe: copia */ }
+  const file = await arq.handle.getFile();
+  const h = await destino.getFileHandle(arq.nome, { create: true });
+  const w = await h.createWritable();
+  await w.write(file);
+  await w.close();
+  return true;
+}
+
+// ---- SISTEMA -----------------------------------------------
+async function carregarOC(oc, fase) {
+  const url = `${fase.base}/${fase.pagOc}/${oc}`;
+  const r = await fetch(url, { credentials: 'same-origin' });
+  const doc = lerHTML(await r.text());
+  const form = [...doc.querySelectorAll('form')].find(f => new RegExp(`/${fase.form}$`).test(f.getAttribute('action') || ''));
+  if (!form) throw new Error(/login/i.test(r.url) ? 'sessão expirada — faça login de novo' : 'OC não encontrada no sistema');
+  return { doc, form, acao: new URL(form.getAttribute('action'), url).href };
+}
+
+// ---- DESCOBRIR O PEDIDO A PARTIR DO Nº DA OC ---------------
+const PALAVRAS_VAZIAS = new Set(['E', 'DE', 'DA', 'DO', 'DOS', 'DAS', 'OBRA', 'FASE']);
+// ignora 'FASE xxx' (CINZA, AZUL, ACABAMENTOS...), FECHADO, ADMINISTRACAO, COMPLETO
+const tokensObra = s => norm(s).replace(/\bFASE\s+[A-Z0-9]+/g, ' ').replace(/\b(FECHADO|ADMINISTRACAO|COMPLETO)\b/g, ' ')
+  .split(/[^A-Z0-9]+/).filter(t => t && !PALAVRAS_VAZIAS.has(t));
+function distancia(a, b) {
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++)
+    d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+  return d[a.length][b.length];
+}
+// "Hilton e Rosana" (Controle) → "HILTON E ROZANA - FASE CINZA - Fechado" (sistema)
+function acharObraSistema(nome, opcoes) {
+  const alvo = tokensObra(nome);
+  if (!alvo.length) throw new Error('obra não informada no Controle');
+  const igual = (a, x) => a === x || (a.length >= 5 && x.length >= 5 && distancia(a, x) <= 1);
+  const contido = (menor, maior) => menor.length > 0 && menor.every(a => maior.some(x => igual(a, x)));
+  const cand = opcoes.map(o => {
+    const t = tokensObra(o.text);
+    // vale nos dois sentidos: "Estúdio PRG - Hilton e Rozana" ⊇ "HILTON E ROZANA" e "Hilton e Rosana" ⊆ "HILTON E ROZANA"
+    const ok = contido(alvo, t) || contido(t, alvo);
+    return ok ? { o, extra: Math.abs(t.length - alvo.length) } : null;
+  }).filter(Boolean).sort((a, b) => a.extra - b.extra);
+  if (!cand.length) {
+    const parecidas = opcoes.map(o => ({ o, n: tokensObra(o.text).filter(x => alvo.some(a => igual(a, x))).length }))
+      .filter(c => c.n > 0).sort((a, b) => b.n - a.n).slice(0, 3).map(c => `"${c.o.text.trim()}"`);
+    throw new Error(`obra "${nome}" não encontrada na lista de obras do sistema` + (parecidas.length ? ` (parecidas: ${parecidas.join(', ')})` : ''));
+  }
+  if (cand.length > 1 && cand[0].extra === cand[1].extra)
+    throw new Error(`obra "${nome}" ambígua no sistema: ${cand.map(c => c.o.text.trim()).join(' / ')}`);
+  return cand[0].o;
+}
+
+const cacheFiltro = {};
+const cacheObras = {};
+async function carregarFiltro(fase) {
+  const url = `${fase.base}/${fase.tela}`;
+  const r = await fetch(url, { credentials: 'same-origin' });
+  const doc = lerHTML(await r.text());
+  const form = [...doc.querySelectorAll('form')].find(f => new RegExp(`/${fase.filtro}$`).test(f.getAttribute('action') || ''));
+  if (!form) throw new Error(/login/i.test(r.url) ? 'sessão expirada — faça login de novo' : 'tela de pesquisa de OCs não encontrada');
+  const opcoes = [...form.querySelectorAll('select[name="obra_id"] option')].filter(o => o.value);
+  return { form, opcoes, acao: new URL(form.getAttribute('action'), url).href };
+}
+async function listaOCsObra(obra, fase) {
+  const f = await (cacheFiltro[fase.nome] ||= carregarFiltro(fase));
+  const op = acharObraSistema(obra, f.opcoes);
+  const body = new URLSearchParams(new FormData(f.form));
+  body.set('obra_id', op.value);
+  body.set('fornecedor_id', '');
+  const r = await fetch(f.acao, { method: 'POST', body, credentials: 'same-origin' });
+  const doc = lerHTML(await r.text());
+  const linhas = [...doc.querySelectorAll('table tbody tr')].map(tr => {
+    const c = [...tr.cells].map(td => td.textContent.trim());
+    const m = (tr.querySelector(`a[href*="${fase.pagOc}/"]`)?.getAttribute('href') || '').match(new RegExp(`${fase.pagOc}/(\\d+)`));
+    return m ? { num: nfNum(c[0]), fornecedor: c[3] || '', pedido: m[1] } : null;
+  }).filter(Boolean);
+  return { obraSistema: op.text.trim(), linhas };
+}
+// procura o Num. OC na lista de OCs da obra numa fase; devolve a linha (pedido, fornecedor)
+async function procurarNaFase(it, fase) {
+  let lista;
+  try { lista = await (cacheObras[fase.nome + '|' + it.obra] ||= listaOCsObra(it.obra, fase)); }
+  catch (e) { if (/não encontrada na lista/.test(e.message)) e.podeOutraFase = true; throw e; }
+  const { obraSistema, linhas } = lista;
+  const n = nfNum(it.oc);
+  let c = linhas.filter(l => l.num === n);
+  if (c.length > 1 && it.fornecedor) {
+    const f = c.filter(l => fornecedorConfere(it.fornecedor, l.fornecedor));
+    if (f.length) c = f;
+  }
+  if (c.length === 1) return c[0];
+  if (c.length > 1) throw new Error(`mais de uma OC ${it.oc} nessa obra (pedidos ${c.map(l => l.pedido).join(', ')})`);
+  const porPedido = linhas.find(l => l.pedido === n);   // caso tenham lançado o nº do Pedido
+  if (porPedido) return porPedido;
+  const e = new Error(`OC ${it.oc} não aparece na lista da Fase ${fase.nome} de ${obraSistema} (sem saldo ou nº errado?)`);
+  e.podeOutraFase = true;
+  throw e;
+}
+async function resolverPedido(it) {
+  const fase = faseDe(it);
+  try {
+    return (await procurarNaFase(it, fase)).pedido;
+  } catch (e) {
+    if (!e.podeOutraFase) throw e;
+    // não achou na fase do Controle: confere a outra fase só para avisar (não troca sozinho)
+    const outra = fase === FASES.AZUL ? FASES.CINZA : FASES.AZUL;
+    let achou = null;
+    try { achou = await procurarNaFase(it, outra); } catch (e2) { /* também não está na outra fase */ }
+    if (achou && (!it.fornecedor || fornecedorConfere(it.fornecedor, achou.fornecedor))) {
+      const e3 = new Error(`OC ${it.oc} não está na Fase ${fase.nome}, mas existe na Fase ${outra.nome} (Pedido ${achou.pedido}, ${achou.fornecedor})`);
+      e3.outraFase = outra.nome;
+      throw e3;
+    }
+    throw e;
+  }
+}
+
+// ---- PAINEL ------------------------------------------------
+const el = (tag, txt, css) => {
+  const e = document.createElement(tag);
+  if (txt != null) e.textContent = txt;
+  if (css) e.style.cssText = css;
+  return e;
+};
+const BTN = 'background:#10a37f;color:#fff;border:0;border-radius:6px;padding:8px 14px;cursor:pointer;font-weight:bold;margin:4px 8px 4px 0;font-size:13px';
+const BTN2 = 'background:#eee;color:#222;border:0;border-radius:6px;padding:8px 14px;cursor:pointer;margin:4px 8px 4px 0;font-size:13px';
+
+document.getElementById('lote-nf-painel')?.remove();
+const painel = el('div', null, 'position:fixed;top:16px;right:16px;z-index:999999;background:#fff;color:#222;' +
+  'border:2px solid #10a37f;border-radius:10px;padding:16px;box-shadow:0 6px 24px rgba(0,0,0,.25);' +
+  'font:13px sans-serif;width:min(760px,calc(100vw - 32px));max-height:88vh;overflow:auto');
+painel.id = 'lote-nf-painel';
+const fechar = el('button', '✕', 'position:absolute;top:8px;right:10px;border:0;background:none;font-size:16px;cursor:pointer');
+fechar.onclick = () => painel.remove();
+const titulo = el('b', `${SO_ARQUIVAR ? 'Arquivar NFs nas obras' : 'Vincular NFs'} — envio ${paraBR(DADOS.envio.data)}`, 'font-size:15px');
+const status = el('p', `${LISTA.length} lançamento(s). ${precisaArquivar ? 'Escolha as duas pastas:' : 'Escolha a pasta da semana (nenhuma obra deste envio é arquivada):'}`, 'margin:8px 0');
+const nomeRaiz = DADOS.raiz || 'OneDrive - MPH Engenharia';
+const btnSemana = el('button', '1. Pasta da semana', BTN);
+const btnRaiz = el('button', `2. Pasta "${nomeRaiz}"`, BTN);
+const escolhas = el('div', null, 'margin:4px 0 8px');
+escolhas.append(btnSemana);
+if (precisaArquivar) escolhas.append(btnRaiz);
+painel.append(fechar, titulo, status, escolhas);
+document.body.append(painel);
+
+let pastaSemana = null, raiz = null;
+await new Promise(pronto => {
+  const marcar = (btn, txt) => { btn.textContent = txt; btn.style.background = '#e8f7f1'; btn.style.color = '#0b6b50'; };
+  const conferir = () => { if (pastaSemana && (raiz || !precisaArquivar)) pronto(); };
+  btnSemana.onclick = async () => {
+    try {
+      pastaSemana = await showDirectoryPicker({ id: 'mph-semana', mode: 'read' });
+      marcar(btnSemana, '✔ ' + pastaSemana.name);
+      conferir();
+    } catch (e) { if (e.name !== 'AbortError') alert(e.message); }
+  };
+  btnRaiz.onclick = async () => {
+    try {
+      const h = await showDirectoryPicker({ id: 'mph-raiz', mode: 'readwrite' });
+      if (DADOS.raiz && norm(h.name) !== norm(DADOS.raiz) &&
+          !confirm(`Você escolheu "${h.name}", mas os caminhos da aba Pastas das obras partem de "${DADOS.raiz}". Usar mesmo assim?`)) return;
+      raiz = h;
+      marcar(btnRaiz, '✔ ' + raiz.name);
+      conferir();
+    } catch (e) { if (e.name !== 'AbortError') alert(e.message); }
+  };
+});
+btnSemana.disabled = btnRaiz.disabled = true;
+
+status.textContent = 'Lendo a pasta da semana...';
+const arquivos = await listarPDFs(pastaSemana);
+status.textContent = SO_ARQUIVAR ? `${arquivos.length} PDF(s) na pasta. Conferindo os arquivos...` : `${arquivos.length} PDF(s) na pasta. Procurando as OCs no sistema (uma consulta por obra)...`;
+
+// ---- CONFERÊNCIA (não grava nada) --------------------------
+const cacheOC = {};
+const cachePasta = {};
+const usadoNoLote = {};
+const itens = LISTA.map(it => ({ it }));
+
+async function conferirItem(r) {
+  const it = r.it;
+  Object.assign(r, { nivel: 'ok', msg: [], fd: null, acao: null, fornOC: '', clienteOC: '', docs: null, pasta: null,
+    pedido: null, semArquivo: false, rateio: null, jaVinculada: false, acimaPendente: false, outraFase: null });
+  try {
+    if (SO_ARQUIVAR) {
+      r.docs = acharDocs(arquivos, it);
+      if (r.docs.peloFornecedor) { r.nivel = 'aviso'; r.msg.push(`PDF achado pelo fornecedor (sem o nº no nome): ${r.docs.doc.nome} — confira`); }
+      if (r.docs.soBoleto) { r.nivel = 'aviso'; r.msg.push(`só há o boleto com esse número — ${r.docs.doc.nome} será anexado como documento; confira`); }
+      cachePasta[it.obra] ||= resolverPastaObra(raiz, DADOS.pastas[it.obra]);
+      r.pasta = await cachePasta[it.obra];
+      r.fd = 'arquivar';
+      const extras = r.docs.boletos.length + r.docs.extras.length;
+      if (!r.msg.length) r.msg.push(`${r.docs.doc.nome}${extras ? ` + ${extras} arquivo(s)` : ''} → ${it.obra}`);
+      return;
+    }
+    if (!it.oc) throw new Error('sem OC');
+    if (!it.vencimento) throw new Error('sem vencimento');
+    r.fase = faseDe(it);
+    r.pedido = await resolverPedido(it);
+    cacheOC[r.fase.nome + r.pedido] ||= carregarOC(r.pedido, r.fase);
+    const { doc, form, acao } = await cacheOC[r.fase.nome + r.pedido];
+    const campo = p => form.querySelector(`[name^="${p}"]`);
+    r.fornOC = campo('forneced')?.value?.trim() || '';
+    r.clienteOC = campo('cliente')?.value?.trim() || '';
+    r.docs = acharDocs(arquivos, it);
+    if (r.docs.peloFornecedor) { r.nivel = 'aviso'; r.msg.push(`PDF achado pelo fornecedor (sem o nº no nome): ${r.docs.doc.nome} — confira`); }
+      if (r.docs.soBoleto) { r.nivel = 'aviso'; r.msg.push(`só há o boleto com esse número — ${r.docs.doc.nome} será anexado como documento; confira`); }
+
+    if (jaVinculada(doc, it, r.fase)) { r.jaVinculada = true; throw new Error('já vinculada nesta OC'); }
+    if (r.fase === FASES.AZUL && ![...doc.querySelectorAll('table thead th')].some(th => norm(th.textContent).includes('NOTA/PARCELA'))) {
+      r.nivel = 'aviso';
+      r.msg.push('não consegui ver as NFs já vinculadas nesta OC — confira na tela se esta NF ainda não foi lançada');
+    }
+    // mesmo nº de NF já na OC com outro vencimento/valor: outra parcela ou vínculo manual
+    const mesmaNF = vinculosDaOC(doc, r.fase).filter(v => mesmaNota(v.nota, nfBase(it.nf)));
+    if (mesmaNF.length) {
+      r.nivel = 'aviso';
+      r.msg.push(`NF ${it.nf} já tem ${mesmaNF.length} vínculo(s) nesta OC (${mesmaNF.map(v => `venc. ${v.venc}, R$ ${paraBRL(v.valor)}`).join('; ')}). ` +
+        `Se esta é outra parcela (venc. ${paraBR(it.vencimento)}), pode marcar; se já foi vinculada à mão, deixe desmarcada`);
+    }
+
+    // NF, NFS-e, Fatura, Contrato, Pedido, Orçamento... entram como nota; só Recibo é Recibo
+    const alvos = norm(it.tipo) === 'RECIBO' ? ['RECIBO'] : ['NOTA FISCAL', 'NF'];
+    const sel = form.querySelector('select[name="tipo_nf"]');
+    const opts = [...sel.options];
+    const opcao = opts.find(o => alvos.includes(norm(o.value)) || alvos.includes(norm(o.text))) ||
+                  opts.find(o => norm(o.text).includes(alvos[0]));
+    if (!opcao) throw new Error(`tipo "${it.tipo}" não existe no sistema (opções: ${opts.map(o => o.text.trim()).join(', ')})`);
+
+    const pendente = paraNumero(campo(r.fase === FASES.AZUL ? 'saldo_pendente' : 'total_di')?.value ?? 0) - (usadoNoLote[r.pedido] || 0);
+    if (paraNumero(it.valor) > pendente + 0.01) {
+      r.nivel = 'aviso';
+      r.acimaPendente = true;
+      r.msg.push(`valor acima do pendente da OC (R$ ${paraBRL(pendente)}) — o sistema costuma recusar`);
+    }
+    if (it.obra && r.clienteOC && !obraConfere(it.obra, r.clienteOC)) {
+      r.nivel = 'aviso';
+      r.msg.push(`OC é do cliente "${r.clienteOC}", mas no Controle a obra é "${it.obra}" — confira o nº do Pedido`);
+    }
+    if (it.fornecedor && !fornecedorConfere(it.fornecedor, r.fornOC)) {
+      r.nivel = 'aviso';
+      r.msg.push(`fornecedor no Controle: "${it.fornecedor}"`);
+    }
+    if (norm(it.formaPag) === 'BOLETO' && !r.docs.boletos.length) {
+      r.nivel = 'aviso';
+      r.msg.push('boleto não encontrado na pasta da semana');
+    }
+
+    if (NAO_ARQUIVAR.has(it.obra)) {
+      r.semArquivo = true;
+    } else {
+      try {
+        if (!raiz) throw new Error('pasta do OneDrive não foi escolhida');
+        cachePasta[it.obra] ||= resolverPastaObra(raiz, DADOS.pastas[it.obra]);
+        r.pasta = await cachePasta[it.obra];
+      } catch (e) {
+        r.nivel = 'aviso';
+        r.msg.push('não será arquivada: ' + e.message);
+      }
+    }
+
+    const arq = await r.docs.doc.handle.getFile();
+    const fd = new FormData(form);
+    r.notaParcela = notaParcela(doc, it, r.fase);
+    if (parcelaDe(r.notaParcela) != null) r.msg.push(`Nº NF/Parcela no sistema: ${r.notaParcela}`);
+    if (r.fase === FASES.AZUL) {
+      const rateio = montarRateio(doc, it.valor);
+      r.rateio = rateio;
+      if (rateio.n > 1) { r.nivel = 'aviso'; r.msg.push(`rateio proporcional em ${rateio.n} CCs: ${rateio.resumo} — confira`); }
+      if (rateio.avisos.length) { r.nivel = 'aviso'; r.msg.push(...rateio.avisos); }
+      fd.set('controle', r.notaParcela);
+      fd.set('tipo_nf', opcao.value);
+      fd.set('data_validade', paraISO(it.vencimento));
+      fd.set('tipo_pagamento', String(it.formaPag || 'boleto').toLowerCase());
+      fd.set('saldo_lancamento', paraBRL(it.valor));
+      fd.set('valor_rateio', rateio.n > 1 ? paraBRL(it.valor) : '');
+      fd.set('tabela-dados-input', rateio.json);
+    } else {
+      fd.set('num_nf', r.notaParcela);
+      fd.set('serie', it.serie ?? 1);
+      fd.set('tipo_nf', opcao.value);
+      fd.set(form.querySelector('input[type="date"]').name, paraISO(it.vencimento));
+      fd.set('valor', paraBRL(it.valor));
+    }
+    fd.delete('file[]');
+    fd.append('file[]', arq, arq.name);
+    // anexa junto o boleto desta parcela (NF única + boleto 1, NF única + boleto 2...)
+    r.boleto = boletoDaParcela(r.docs, it, r.notaParcela);
+    if (r.boleto) {
+      const fb = await r.boleto.handle.getFile();
+      fd.append('file[]', fb, fb.name);
+    } else if (r.docs.boletos.length && !r.docs.soBoleto) {
+      r.nivel = 'aviso';
+      r.msg.push(`há ${r.docs.boletos.length} boleto(s) desta NF, mas nenhum é claramente da parcela com venc. ${paraBR(it.vencimento)} — vai só a NF (${r.docs.boletos.map(a => a.nome).join(', ')})`);
+    }
+
+    r.fd = fd;
+    r.acao = acao;
+    usadoNoLote[r.pedido] = (usadoNoLote[r.pedido] || 0) + paraNumero(it.valor);
+    r.msg.push(`anexos: ${r.docs.doc.nome}${r.boleto ? ' + ' + r.boleto.nome : ''} → ${it.obra}`);
+  } catch (e) {
+    r.nivel = 'erro';
+    r.msg = [e.message];
+    r.outraFase = e.outraFase || null;
+  }
+}
+
+for (const r of itens) await conferirItem(r);
+
+// ---- PRÉVIA ------------------------------------------------
+const cores = { ok: '#e8f7f1', aviso: '#fff6dc', erro: '#fde8e8' };
+const icone = { ok: '✅ ', aviso: '⚠️ ', erro: '❌ ' };
+const tabela = el('table', null, 'width:100%;border-collapse:collapse;margin:8px 0');
+const cab = tabela.createTHead().insertRow();
+['', 'OC → Pedido', 'Doc.', 'Venc.', 'Valor', 'Fornecedor · Cliente na OC', 'Situação'].forEach(t =>
+  cab.append(el('th', t, 'text-align:left;padding:4px;border-bottom:1px solid #ccc')));
+const corpo = tabela.createTBody();
+const BTN_MINI = 'margin-top:4px;background:#1f6feb;color:#fff;border:0;border-radius:5px;padding:4px 8px;cursor:pointer;font-size:12px;font-weight:bold';
+
+function desenharLinha(r) {
+  const it = r.it;
+  r.tr.style.background = cores[r.nivel];
+  r.ck.checked = r.nivel === 'ok';
+  r.ck.disabled = r.nivel === 'erro';
+  r.c.oc.textContent = SO_ARQUIVAR ? `OC ${it.oc}` : `${it.oc} → ${r.pedido || '?'}${norm(it.fase) === 'AZUL' ? ' (Azul)' : ''}`;
+  r.c.forn.textContent = r.fornOC
+    ? r.fornOC + (r.clienteOC ? ' · ' + r.clienteOC : '')
+    : (it.fornecedor ? `Controle: ${it.fornecedor}` : '');
+  r.c.forn.style.color = r.fornOC ? '' : '#777';
+  r.celSit.textContent = (r.faseTrocada ? `🔄 fase trocada para ${it.fase} · ` : '') + icone[r.nivel] + r.msg.join('; ');
+  if (r.outraFase) {
+    const b = el('button', `🔄 Usar Fase ${r.outraFase} (atualiza o Controle no retorno)`, BTN_MINI);
+    b.onclick = async () => {
+      b.disabled = true; b.textContent = 'Conferindo na outra fase...';
+      r.it = { ...it, fase: r.outraFase };
+      r.faseTrocada = true;
+      await conferirItem(r);
+      desenharLinha(r);
+      atualizar();
+    };
+    r.celSit.append(el('br'), b);
+  }
+}
+
+for (const r of itens) {
+  r.tr = corpo.insertRow();
+  const cel = () => {
+    const td = r.tr.insertCell();
+    td.style.cssText = 'padding:4px;border-bottom:1px solid #eee;vertical-align:top';
+    return td;
+  };
+  r.ck = el('input');
+  r.ck.type = 'checkbox';
+  cel().append(r.ck);
+  r.c = { oc: cel() };
+  cel().textContent = r.it.nf;
+  cel().textContent = paraBR(r.it.vencimento);
+  cel().textContent = paraBRL(r.it.valor);
+  r.c.forn = cel();
+  r.celSit = cel();
+  desenharLinha(r);
+}
+
+const conta = n => itens.filter(r => r.nivel === n).length;
+status.textContent = `${conta('ok')} OK · ${conta('aviso')} para conferir · ${conta('erro')} com erro`;
+const legenda = el('p', (SO_ARQUIVAR ? 'Linhas marcadas serão copiadas para a pasta da obra (nada é enviado ao sistema). ' : 'Linhas marcadas serão vinculadas e, se der certo, copiadas para a pasta da obra (exceto obras sem arquivamento). ') +
+  'As ⚠️ vêm desmarcadas: confira e marque se estiver certo.', 'margin:4px 0 10px;color:#555');
+const btnEnviar = el('button', '', BTN);
+const btnCancelar = el('button', 'Cancelar', BTN2);
+const atualizar = () => {
+  const n = itens.filter(r => r.ck.checked).length;
+  btnEnviar.textContent = `${SO_ARQUIVAR ? 'Arquivar' : 'Vincular'} ${n} lançamento(s)`;
+  btnEnviar.disabled = !n;
+  btnEnviar.style.opacity = n ? 1 : .5;
+  status.textContent = `${conta('ok')} OK · ${conta('aviso')} para conferir · ${conta('erro')} com erro`;
+};
+itens.forEach(r => { r.ck.onchange = atualizar; });
+atualizar();
+btnCancelar.onclick = () => painel.remove();
+painel.append(tabela, legenda, btnEnviar, btnCancelar);
+
+// ---- ENVIO + ARQUIVAMENTO ----------------------------------
+// cópia para a pasta da obra (NF + boletos + relatórios do mesmo número)
+const copiados = new Set();
+let arq = 0;
+async function arquivarItem(r, add) {
+  if (r.pasta) {
+    try {
+      const mes = await pastaDoMes(r.pasta, DADOS.envio.data);
+      let novos = 0, jaTinha = 0;
+      for (const a of [r.docs.doc, ...r.docs.boletos, ...(r.docs.extras || [])]) {
+        const chave = r.it.obra + '|' + mes.name + '|' + a.nome;
+        if (copiados.has(chave)) continue;
+        copiados.add(chave);
+        (await copiar(a, mes)) ? novos++ : jaTinha++;
+      }
+      r.arquivado = true;
+      arq++;
+      add(` · 📁 ${mes.name}` + (novos ? ` (${novos} copiado(s))` : '') + (jaTinha ? ` (${jaTinha} já existia(m))` : ''));
+    } catch (e) {
+      add(' · ⚠️ não arquivou: ' + e.message);
+    }
+  } else if (!r.semArquivo) {
+    add(' · ⚠️ não arquivada (sem pasta)');
+  }
+}
+
+btnEnviar.onclick = async () => {
+  const marcados = itens.filter(r => r.ck.checked && r.fd);
+  btnEnviar.disabled = btnCancelar.disabled = fechar.disabled = true;
+  itens.forEach(r => { r.ck.disabled = true; });
+  let n = 0;
+
+  for (const r of marcados) {
+    status.textContent = `${SO_ARQUIVAR ? 'Copiando' : 'Enviando'} ${++n} de ${marcados.length}...`;
+    r.celSit.textContent = SO_ARQUIVAR ? '⏳ copiando...' : '⏳ enviando...';
+    if (SO_ARQUIVAR) {
+      let txt = '';
+      await arquivarItem(r, t => { txt += t; });
+      r.celSit.textContent = r.arquivado ? '✅ arquivada' + txt : '❌' + txt.replace(/^ · ⚠️/, '');
+      r.tr.style.background = r.arquivado ? cores.ok : cores.erro;
+      continue;
+    }
+    try {
+      const saldoDe = oc => paraNumero(oc.form.querySelector(r.fase === FASES.AZUL ? '[name="saldo_pendente"]' : '[name^="total_di"]')?.value ?? NaN);
+      let saldoAntes = NaN;
+      try { saldoAntes = saldoDe(await carregarOC(r.pedido, r.fase)); } catch (e) { /* segue sem o saldo */ }
+      const resp = await fetch(r.acao, { method: 'POST', body: r.fd, credentials: 'same-origin' });
+      const doc = lerHTML(await resp.text());
+      let confirmado = jaVinculada(doc, r.it, r.fase);
+      if (!confirmado) {
+        // a resposta pode ser outra tela: recarrega a OC e confere pela tabela ou pela queda do saldo
+        try {
+          const depois = await carregarOC(r.pedido, r.fase);
+          confirmado = jaVinculada(depois.doc, r.it, r.fase) ||
+            (!isNaN(saldoAntes) && Math.abs((saldoAntes - saldoDe(depois)) - paraNumero(r.it.valor)) < 0.02);
+        } catch (e) { /* mantém não confirmado */ }
+      }
+      if (!confirmado) {
+        const msgsScript = [...doc.querySelectorAll('script')].flatMap(sc =>
+          [...sc.textContent.matchAll(/(?:toastr\.(?:error|warning)|Swal\.fire|swal)\s*\(\s*(?:\{[^}]*?(?:text|title|html)\s*:\s*)?['"`]([^'"`]{3,200})['"`]/g)].map(m => m[1]));
+        const erros = [...new Set([...[...doc.querySelectorAll('.alert-danger, .alert-warning, .invalid-feedback, .text-danger, .toast-body, .swal2-html-container')]
+          .map(e => e.textContent.trim()), ...msgsScript].filter(Boolean))].join(' | ') ||
+          (resp.status >= 400 ? `HTTP ${resp.status}` : /login/i.test(resp.url) ? 'sessão expirada — faça login de novo' : '');
+        console.warn('MPH — vínculo não confirmado', { pedido: r.pedido, nf: r.it.nf, status: resp.status, url: resp.url, saldoAntes, resposta: doc.body?.innerText?.slice(0, 1500) });
+        throw new Error('o sistema não gravou o vínculo' + (erros ? ': ' + erros
+          : r.acimaPendente ? ' — provavelmente porque o valor passa do pendente da OC'
+          : ' — confira na tela da OC'));
+      }
+      r.vinculado = true;
+      let txt = '✅ vinculada';
+      await arquivarItem(r, t => { txt += t; });
+      r.celSit.textContent = txt;
+      r.tr.style.background = (r.arquivado || r.semArquivo) ? cores.ok : cores.aviso;
+    } catch (e) {
+      r.celSit.textContent = '❌ ' + e.message;
+      r.tr.style.background = cores.erro;
+    }
+    await espera(500);
+  }
+
+  const total = marcados.length;
+  const vinc = itens.filter(r => r.vinculado).length;
+  status.textContent = SO_ARQUIVAR
+    ? `Concluído: ${arq} de ${total} arquivada(s) na pasta da obra.`
+    : `Concluído: ${vinc} de ${total} vinculada(s)` + (precisaArquivar ? `, ${arq} arquivada(s) na pasta da obra.` : '.');
+  btnEnviar.style.display = 'none';
+  btnCancelar.textContent = 'Fechar';
+  btnCancelar.disabled = fechar.disabled = false;
+
+  const retornoObj = {
+    tipo: 'mph-retorno-vinculo',
+    envio: DADOS.envio.id,
+    itens: itens.filter(r => SO_ARQUIVAR ? r.arquivado : (r.vinculado || r.jaVinculada)).map(r => ({ id: r.it.id, arquivado: !!r.arquivado })),
+    fases: itens.filter(r => r.faseTrocada).map(r => ({ id: r.it.id, fase: r.it.fase }))
+  };
+  const retorno = JSON.stringify(retornoObj);
+  console.log('RETORNO PARA O CONTROLE:', retorno);
+  console.table(itens.map(r => ({ OC: r.it.oc, doc: r.it.nf, vencimento: paraBR(r.it.vencimento), valor: paraBRL(r.it.valor), situacao: r.celSit.textContent })));
+
+  // rodando dentro do próprio Controle: atualiza direto, sem copiar e colar
+  if (typeof window.__mphAplicarRetorno === 'function') {
+    window.__mphAplicarRetorno(retornoObj);
+    painel.insertBefore(el('p', '✔ Controle atualizado.', 'margin:6px 0;color:#0b6b50;font-weight:bold'), btnCancelar);
+    return;
+  }
+  const btnRetorno = el('button', '📋 Copiar retorno para o Controle', BTN);
+  btnRetorno.onclick = async () => {
+    let copiou = false;
+    try { await navigator.clipboard.writeText(retorno); copiou = true; } catch (e) {
+      const ta = el('textarea');
+      ta.value = retorno;
+      document.body.append(ta);
+      ta.select();
+      try { copiou = document.execCommand('copy'); } catch (e2) { /* sem cópia */ }
+      ta.remove();
+    }
+    btnRetorno.textContent = copiou ? '✔ Retorno copiado — cole no Controle em "↩ Colar retorno"' : 'Não copiou — veja o retorno no Console';
+  };
+  painel.insertBefore(btnRetorno, btnCancelar);
+};
+
+})();
+</script>
+
+
+<script>
+// ============================================================
+// DADOS
+// ============================================================
+const STORAGE_KEY = 'mph_envios_v1';
+// Estrutura: [ { id, data, obs, nfs: [ {id, numero, semOC, ocNegativada, faltaApropriacao, obra, fase, fornecedor, tipo, tipoDoc, numDoc, valor, vencimento, formaPag, retencao, retPct} ] } ]
+
+let envios = [];
+let editEnvioId = null;
+let editNFId    = null;
+let currentEnvioId = null; // envio ao qual está adicionando/editando NF
+
+// os dados vêm do Supabase (carregarNuvem) e voltam para lá (agendarSync)
+function persist() {
+  agendarSync();
+  autoSalvarPasta();
+  renderSummary();
+  renderEnvios();
+  populateFiltros();
+  atualizarBadgePastas();
+}
+
+// ============================================================
+// HELPERS
+// ============================================================
+function fmtVal(v) {
+  return 'R$ ' + Number(v||0).toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2});
+}
+function fmtDate(d) {
+  if (!d) return '—';
+  const [y,m,dia] = d.split('-');
+  return `${dia}/${m}/${y}`;
+}
+function fmtDateLabel(d) {
+  if (!d) return 'Sem data';
+  const [y,m,dia] = d.split('-');
+  return `${dia}/${m}/${y}`;
+}
+function today() { return new Date().toISOString().slice(0,10); }
+
+function calcLiquido(nf) {
+  const v = Number(nf.valor || 0);
+  if (nf.retencao && nf.retPct) return v * (1 - Number(nf.retPct) / 100);
+  return v;
+}
+
+function getVencStatus(nf) {
+  if (!nf.vencimento) return null;
+  const hoje = new Date(); hoje.setHours(0,0,0,0);
+  const ven  = new Date(nf.vencimento + 'T00:00:00');
+  const diff = Math.ceil((ven - hoje) / 86400000);
+  if (diff < 0) return 'vencido';
+  if (diff <= 2) return 'alerta';
+  return null;
+}
+
+function getOcSit(nf) {
+  if (nf.faltaApropriacao) return 'faltaApropriacao';
+  if (nf.ocNegativada)     return 'ocNegativada';
+  if (nf.semOC)            return 'semOC';
+  return null;
+}
+
+function ocBadge(nf) {
+  const s = getOcSit(nf);
+  if (!s) return '';
+  if (s === 'semOC')            return '<span class="badge sem-oc">⚪ Sem OC</span>';
+  if (s === 'ocNegativada')     return '<span class="badge oc-neg">🔴 OC Neg.</span>';
+  if (s === 'faltaApropriacao') return '<span class="badge falta-apr">🟣 Falta Aprop.</span>';
+}
+
+function faseBadge(fase) {
+  if (fase === 'Cinza') return '<span class="badge cinza">⬜ Cinza</span>';
+  if (fase === 'Azul')  return '<span class="badge azul">🟦 Azul</span>';
+  return '<span style="color:var(--text-dim)">—</span>';
+}
+
+function tipoBadge(tipo) {
+  if (tipo === 'Mão de obra') return '<span class="badge mao">👷 M.Obra</span>';
+  return '<span class="badge material">📦 Material</span>';
+}
+
+function allNFs() {
+  return envios.flatMap(e => e.nfs);
+}
+
+// ============================================================
+// SUMMARY
+// ============================================================
+function renderSummary() {
+  const nfs = allNFs();
+  const totalEnvios = envios.length;
+  const totalNFs    = nfs.length;
+  const totalBruto  = nfs.reduce((s,n) => s + Number(n.valor||0), 0);
+  const vencidos    = nfs.filter(n => getVencStatus(n) === 'vencido').length;
+  const aRegularizar= nfs.filter(n => n.semOC || n.ocNegativada || n.faltaApropriacao).length;
+
+  document.getElementById('summaryBar').innerHTML = `
+    <div class="sum-card blue">
+      <div class="label">Envios</div>
+      <div class="value">${totalEnvios}</div>
+      <div class="sub">lotes cadastrados</div>
+    </div>
+    <div class="sum-card">
+      <div class="label">Total NFs</div>
+      <div class="value">${totalNFs}</div>
+      <div class="sub">${fmtVal(totalBruto)}</div>
+    </div>
+    <div class="sum-card red">
+      <div class="label">Vencidos</div>
+      <div class="value">${vencidos}</div>
+      <div class="sub">NFs vencidas</div>
+    </div>
+    <div class="sum-card amber">
+      <div class="label">A Regularizar</div>
+      <div class="value">${aRegularizar}</div>
+      <div class="sub">Sem OC / OC Neg. / Falta Aprop.</div>
+    </div>
+  `;
+}
+
+// ============================================================
+// FILTROS
+// ============================================================
+function populateFiltros() {
+  const obras = [...new Set(allNFs().map(n => n.obra).filter(Boolean))].sort();
+  const fObra = document.getElementById('filtroObra');
+  const cur = fObra.value;
+  fObra.innerHTML = '<option value="">Todas as obras</option>' + obras.map(o => `<option${o===cur?' selected':''}>${o}</option>`).join('');
+
+  const pObra = document.getElementById('pdfFiltroObra');
+  if (pObra) pObra.innerHTML = '<option value="">Todas as obras</option>' + obras.map(o => `<option>${o}</option>`).join('');
+
+  const pEnvio = document.getElementById('pdfFiltroEnvio');
+  if (pEnvio) {
+    pEnvio.innerHTML = '<option value="">Todos os envios</option>' + [...envios].sort((a,b)=>b.data.localeCompare(a.data)).map(e =>
+      `<option value="${e.id}">${fmtDateLabel(e.data)}${e.obs ? ' — '+e.obs : ''} (${e.nfs.length} NFs)</option>`
+    ).join('');
+  }
+}
+
+// ============================================================
+// CHIPS / FILTROS RÁPIDOS
+// ============================================================
+const activeChips = new Set();
+
+function toggleChip(chip) {
+  if (activeChips.has(chip)) activeChips.delete(chip);
+  else activeChips.add(chip);
+  document.getElementById('chip-'+chip).classList.toggle('active', activeChips.has(chip));
+  document.getElementById('chipClearAll').style.display = activeChips.size ? 'inline-block' : 'none';
+  renderEnvios();
+}
+
+function clearAllChips() {
+  activeChips.clear();
+  ['semOC','ocNegativada','faltaAprop','retencao','maoObra'].forEach(c => {
+    document.getElementById('chip-'+c).classList.remove('active');
+  });
+  document.getElementById('chipClearAll').style.display = 'none';
+  renderEnvios();
+}
+
+function clearSearch() {
+  document.getElementById('searchInput').value = '';
+  document.getElementById('searchClear').style.display = 'none';
+  renderEnvios();
+}
+
+function matchesChips(nf) {
+  if (!activeChips.size) return true;
+  for (const chip of activeChips) {
+    if (chip === 'semOC'        && !nf.semOC)            return false;
+    if (chip === 'ocNegativada' && !nf.ocNegativada)     return false;
+    if (chip === 'faltaAprop'   && !nf.faltaApropriacao) return false;
+    if (chip === 'retencao'     && !nf.retencao)         return false;
+    if (chip === 'maoObra'      && nf.tipo !== 'Mão de obra') return false;
+  }
+  return true;
+}
+function highlight(text, search) {
+  if (!search || !text) return text || '';
+  const esc = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return String(text).replace(new RegExp('('+esc+')', 'gi'), '<mark style="background:rgba(245,158,11,0.35);color:var(--amber);border-radius:2px;padding:0 2px">$1</mark>');
+}
+
+function renderEnvios() {
+  const search  = document.getElementById('searchInput').value.trim();
+  const fObra   = document.getElementById('filtroObra').value;
+  const fFase   = document.getElementById('filtroFase').value;
+  const main    = document.getElementById('mainContent');
+  const srLower = search.toLowerCase();
+  const hasFilter = srLower || fObra || fFase || activeChips.size;
+
+  document.getElementById('searchClear').style.display = search ? 'block' : 'none';
+
+  let totalNFsFiltradas = 0;
+  let lista = [...envios].sort((a,b) => b.data.localeCompare(a.data));
+
+  if (!lista.length) {
+    document.getElementById('searchResultBar').style.display = 'none';
+    main.innerHTML = `<div class="empty-state"><div class="icon">📭</div><p>Nenhum envio cadastrado ainda.<br>Clique em <strong>+ Novo Envio</strong> para começar.</p></div>`;
+    return;
+  }
+
+  const cards = lista.map(envio => {
+    let nfs = envio.nfs.filter(n => {
+      if (fObra && n.obra !== fObra) return false;
+      if (fFase && n.fase !== fFase) return false;
+      if (!matchesChips(n)) return false;
+      if (srLower && !`${n.fornecedor} ${n.obra} ${n.numDoc} ${n.numero} ${n.tipoDoc}`.toLowerCase().includes(srLower)) return false;
+      return true;
+    }).sort((a, b) => (a.obra || '').localeCompare(b.obra || '', 'pt-BR') || (a.fornecedor || '').localeCompare(b.fornecedor || '', 'pt-BR'));
+
+    if (hasFilter && !nfs.length) return '';
+    totalNFsFiltradas += nfs.length;
+
+    if (hasFilter) openCards.add(envio.id);
+
+    const totalBruto = nfs.reduce((s,n) => s + Number(n.valor||0), 0);
+    const totalLiq   = nfs.reduce((s,n) => s + calcLiquido(n), 0);
+    const temVencido = nfs.some(n => getVencStatus(n) === 'vencido');
+    const temAlerta  = nfs.some(n => getVencStatus(n) === 'alerta');
+    const temReg     = nfs.some(n => n.semOC || n.ocNegativada || n.faltaApropriacao);
+    const alertIcon  = temVencido ? '🔴' : temAlerta ? '🟡' : temReg ? '🟠' : '';
+
+    return `
+    <div class="envio-card${openCards.has(envio.id)?' open':''}" id="card-${envio.id}">
+      <div class="envio-header" onclick="toggleCard('${envio.id}')">
+        <span class="envio-chevron">▶</span>
+        <span class="envio-date-badge">${fmtDateLabel(envio.data)}</span>
+        <span class="envio-title">${envio.obs || 'Envio de NFs'} ${alertIcon}</span>
+        <div class="envio-meta">
+          <span class="envio-count">${nfs.length} NF${nfs.length!==1?'s':''}</span>
+          ${nfs.some(n=>n.vinculado) ? `<span class="envio-linked-count">✓ ${nfs.filter(n=>n.vinculado).length}/${nfs.length} vinculadas</span>` : ''}
+          <span class="envio-total">${fmtVal(totalBruto)}</span>
+        </div>
+        <div class="envio-actions" onclick="event.stopPropagation()">
+          <button class="icon-btn edit" onclick="vincularNoSistema('${envio.id}')" title="Gerar script para vincular no sistema e arquivar nas obras">⚡ Vincular</button>
+          <button class="icon-btn edit" onclick="arquivarPendentes('${envio.id}')" title="Copiar para a pasta da obra as NFs já vinculadas que ainda não foram arquivadas">📁 Arquivar</button>
+          <button class="icon-btn edit" onclick="openNovaNF('${envio.id}')" title="Adicionar NF">+ NF</button>
+          <button class="icon-btn edit" onclick="editEnvio('${envio.id}')" title="Editar envio">✎</button>
+          <button class="icon-btn del" onclick="deleteEnvio('${envio.id}')" title="Excluir envio">🗑</button>
+        </div>
+      </div>
+      <div class="envio-body">
+        <div class="envio-divider">
+          <span>Total bruto: <strong>${fmtVal(totalBruto)}</strong> &nbsp;|&nbsp; Total líquido: <strong>${fmtVal(totalLiq)}</strong></span>
+          <span>${nfs.length} registro(s)</span>
+        </div>
+        <div class="tbl-wrap">
+        <table>
+          <thead><tr>
+            <th style="text-align:center" title="Vinculado no sistema">✓</th>
+            <th>Nº OC</th><th>Situação OC</th><th>Obra</th><th>Fase</th>
+            <th>Fornecedor</th><th>Tipo</th><th>Documento</th>
+            <th>Valor</th><th>Ret.</th><th>Vlr Líquido</th>
+            <th>Vencimento</th><th>Forma Pgto</th><th></th>
+          </tr></thead>
+          <tbody>
+          ${nfs.length ? nfs.map(n => {
+            const vs = getVencStatus(n);
+            const venCls = vs === 'vencido' ? 'ven-vencido' : vs === 'alerta' ? 'ven-alerta' : '';
+            const retLabel = n.retencao ? (n.retPct ? n.retPct+'%' : '11%') : null;
+            return `<tr class="${n.vinculado ? 'linked-row' : ''}">
+              <td class="check-cell" style="text-align:center">
+                <input type="checkbox" class="link-check" title="Marcar como já vinculado no sistema" ${n.vinculado?'checked':''} onchange="toggleVinculado('${envio.id}','${n.id}')">
+              </td>
+              <td><strong>${highlight(n.numero||'—', srLower)}</strong></td>
+              <td>${ocBadge(n)||'—'}</td>
+              <td>${highlight(n.obra||'—', srLower)}</td>
+              <td>${faseBadge(n.fase)}</td>
+              <td>${highlight(n.fornecedor||'—', srLower)}</td>
+              <td>${tipoBadge(n.tipo)}</td>
+              <td>${highlight((n.tipoDoc||'NF')+' '+(n.numDoc||''), srLower)}${n.arquivado ? ' <span title="Arquivado na pasta da obra">📁</span>' : ''}</td>
+              <td>${fmtVal(n.valor)}</td>
+              <td style="text-align:center">${retLabel ? `<span style="color:#f87171;font-weight:700;font-size:11px">–${retLabel}</span>` : '—'}</td>
+              <td>${fmtVal(calcLiquido(n))}</td>
+              <td class="${venCls}">${fmtDate(n.vencimento)}</td>
+              <td>${n.formaPag||'—'}</td>
+              <td class="check-cell">
+                <div style="display:flex;gap:4px">
+                  <button class="icon-btn edit" onclick="editNF('${envio.id}','${n.id}')">✎</button>
+                  <button class="icon-btn del" onclick="deleteNF('${envio.id}','${n.id}')">🗑</button>
+                </div>
+              </td>
+            </tr>`;
+          }).join('') : `<tr><td colspan="14" style="text-align:center;color:var(--text-dim);padding:1.5rem">Nenhuma NF neste envio.</td></tr>`}
+          </tbody>
+        </table>
+        </div>
+      </div>
+    </div>`;
+  }).filter(Boolean);
+
+  // Barra de resultado
+  const resultBar = document.getElementById('searchResultBar');
+  if (hasFilter) {
+    resultBar.style.display = 'block';
+    let desc = [];
+    if (srLower)                             desc.push(`"${search}"`);
+    if (fObra)                               desc.push('Obra: '+fObra);
+    if (fFase)                               desc.push('Fase: '+fFase);
+    if (activeChips.has('semOC'))           desc.push('Sem OC');
+    if (activeChips.has('ocNegativada'))    desc.push('OC Negativada');
+    if (activeChips.has('faltaAprop'))      desc.push('Falta Apropriação');
+    if (activeChips.has('retencao'))        desc.push('Com Retenção');
+    if (activeChips.has('maoObra'))         desc.push('Mão de Obra');
+    document.getElementById('searchResultText').textContent =
+      `${totalNFsFiltradas} NF(s) encontrada(s) — filtros: ${desc.join(' · ')}`;
+  } else {
+    resultBar.style.display = 'none';
+  }
+
+  if (!cards.length) {
+    main.innerHTML = `<div class="empty-state"><div class="icon">🔍</div><p>Nenhuma NF encontrada com os filtros aplicados.</p></div>`;
+    return;
+  }
+  main.innerHTML = cards.join('');
+}
+
+// ============================================================
+// TOGGLE CARD
+// ============================================================
+const openCards = new Set();
+function toggleCard(id) {
+  const card = document.getElementById('card-'+id);
+  if (!card) return;
+  card.classList.toggle('open');
+  if (card.classList.contains('open')) openCards.add(id);
+  else openCards.delete(id);
+}
+
+// ============================================================
+// MODAL ENVIO
+// ============================================================
+function openNovoEnvio() {
+  editEnvioId = null;
+  document.getElementById('modalEnvioTitle').textContent = 'Novo Envio';
+  document.getElementById('fEnvioData').value = today();
+  document.getElementById('fEnvioObs').value = '';
+  document.getElementById('modalEnvioBg').classList.add('open');
+}
+
+function editEnvio(id) {
+  const e = envios.find(x => x.id === id);
+  if (!e) return;
+  editEnvioId = id;
+  document.getElementById('modalEnvioTitle').textContent = 'Editar Envio';
+  document.getElementById('fEnvioData').value = e.data;
+  document.getElementById('fEnvioObs').value = e.obs || '';
+  document.getElementById('modalEnvioBg').classList.add('open');
+}
+
+function closeModalEnvio() { document.getElementById('modalEnvioBg').classList.remove('open'); }
+
+function salvarEnvio() {
+  const data = document.getElementById('fEnvioData').value;
+  const obs  = document.getElementById('fEnvioObs').value.trim();
+  if (!data) { alert('Informe a data do envio.'); return; }
+  if (editEnvioId) {
+    const e = envios.find(x => x.id === editEnvioId);
+    if (e) { e.data = data; e.obs = obs; }
+  } else {
+    const novoEnvio = { id: 'ENV_'+Date.now(), data, obs, nfs: [] };
+    envios.unshift(novoEnvio);
+    openCards.add(novoEnvio.id);
+  }
+  persist();
+  closeModalEnvio();
+}
+
+function deleteEnvio(id) {
+  const e = envios.find(x => x.id === id);
+  if (!e) return;
+  if (!confirm(`Excluir envio de ${fmtDateLabel(e.data)} com ${e.nfs.length} NF(s)? Esta ação não pode ser desfeita.`)) return;
+  envios = envios.filter(x => x.id !== id);
+  openCards.delete(id);
+  persist();
+}
+
+// ============================================================
+// MODAL NF
+// ============================================================
+function openNovaNF(envioId) {
+  preencherSelectObras();
+  currentEnvioId = envioId;
+  editNFId = null;
+  document.getElementById('modalNFTitle').textContent = 'Nova NF';
+  resetFormNF();
+  document.getElementById('modalNFBg').classList.add('open');
+}
+
+function editNF(envioId, nfId) {
+  const envio = envios.find(e => e.id === envioId);
+  if (!envio) return;
+  const nf = envio.nfs.find(n => n.id === nfId);
+  if (!nf) return;
+  preencherSelectObras();
+  currentEnvioId = envioId;
+  editNFId = nfId;
+  document.getElementById('modalNFTitle').textContent = 'Editar NF';
+  populateFormNF(nf);
+  document.getElementById('modalNFBg').classList.add('open');
+}
+
+function closeModalNF() { document.getElementById('modalNFBg').classList.remove('open'); }
+
+function resetFormNF() {
+  document.getElementById('fNum').value = '';
+  ['fSemOC','fOcNeg','fFaltaApr'].forEach(id => document.getElementById(id).checked = false);
+  ['ocSemBox','ocNegBox','ocAprBox'].forEach(id => document.getElementById(id).classList.remove('active'));
+  document.getElementById('fObra').value = '';
+  document.getElementById('fObraCustom').style.display = 'none';
+  document.getElementById('fObraCustom').value = '';
+  document.getElementById('fFaseCinza').checked = false;
+  document.getElementById('fFaseAzul').checked = false;
+  document.getElementById('faseCinzaBox').classList.remove('active');
+  document.getElementById('faseAzulBox').classList.remove('active');
+  document.getElementById('fForn').value = '';
+  document.getElementById('fTipo').value = 'Material';
+  document.getElementById('retencaoRow').style.display = 'none';
+  document.getElementById('fRetencao').checked = false;
+  document.getElementById('retencaoBox').classList.remove('active');
+  document.getElementById('retencaoPctRow').style.display = 'none';
+  document.getElementById('fRetPct').value = '11';
+  document.getElementById('fTipoDoc').value = 'NF';
+  document.getElementById('fNumDoc').value = '';
+  document.getElementById('fVal').value = '';
+  document.getElementById('fVen').value = '';
+  document.getElementById('fFormaPag').value = 'Transferência';
+  document.getElementById('ocDupWarn').style.display = 'none';
+}
+
+function populateFormNF(nf) {
+  document.getElementById('fNum').value = nf.numero || '';
+  ['fSemOC','fOcNeg','fFaltaApr'].forEach(id => document.getElementById(id).checked = false);
+  ['ocSemBox','ocNegBox','ocAprBox'].forEach(id => document.getElementById(id).classList.remove('active'));
+  const sit = getOcSit(nf);
+  if (sit === 'semOC')            { document.getElementById('fSemOC').checked = true;    document.getElementById('ocSemBox').classList.add('active'); }
+  if (sit === 'ocNegativada')     { document.getElementById('fOcNeg').checked = true;    document.getElementById('ocNegBox').classList.add('active'); }
+  if (sit === 'faltaApropriacao') { document.getElementById('fFaltaApr').checked = true; document.getElementById('ocAprBox').classList.add('active'); }
+
+  // Obra
+  const sel = document.getElementById('fObra');
+  let found = false;
+  for (let opt of sel.options) { if (opt.value === nf.obra) { found = true; break; } }
+  if (!found && nf.obra) {
+    const opt = document.createElement('option');
+    opt.value = opt.textContent = nf.obra;
+    sel.insertBefore(opt, sel.querySelector('[value="__nova__"]'));
+  }
+  sel.value = nf.obra || '';
+
+  // Fase
+  document.getElementById('fFaseCinza').checked = nf.fase === 'Cinza';
+  document.getElementById('fFaseAzul').checked  = nf.fase === 'Azul';
+  document.getElementById('faseCinzaBox').classList.toggle('active', nf.fase === 'Cinza');
+  document.getElementById('faseAzulBox').classList.toggle('active',  nf.fase === 'Azul');
+
+  document.getElementById('fForn').value = nf.fornecedor || '';
+  document.getElementById('fTipo').value = nf.tipo || 'Material';
+  onTipoChange();
+  document.getElementById('fRetencao').checked = !!nf.retencao;
+  document.getElementById('retencaoBox').classList.toggle('active', !!nf.retencao);
+  document.getElementById('retencaoPctRow').style.display = nf.retencao ? 'block' : 'none';
+  document.getElementById('fRetPct').value = nf.retPct || '11';
+  document.getElementById('fTipoDoc').value = nf.tipoDoc || 'NF';
+  document.getElementById('fNumDoc').value = nf.numDoc || '';
+  document.getElementById('fVal').value = nf.valor || '';
+  document.getElementById('fVen').value = nf.vencimento || '';
+  document.getElementById('fFormaPag').value = nf.formaPag || 'Transferência';
+  checkDuplicataOC();
+}
+
+// ============================================================
+// DUPLICIDADE (Obra + Nº OC)
+// ============================================================
+function findDuplicataOC(obra, numero, excludeNfId) {
+  const numNorm = (numero || '').trim().toLowerCase();
+  if (!obra || !numNorm) return null;
+  for (const envio of envios) {
+    for (const nf of envio.nfs) {
+      if (nf.id === excludeNfId) continue;
+      if (nf.obra === obra && (nf.numero || '').trim().toLowerCase() === numNorm) {
+        return { envio, nf };
+      }
+    }
+  }
+  return null;
+}
+
+function checkDuplicataOC() {
+  const obraSel = document.getElementById('fObra');
+  const obraCustom = document.getElementById('fObraCustom');
+  const obra = obraSel.value === '__nova__' ? obraCustom.value.trim() : obraSel.value;
+  const numero = document.getElementById('fNum').value;
+  const warn = document.getElementById('ocDupWarn');
+
+  const dup = findDuplicataOC(obra, numero, editNFId);
+  if (!dup) { warn.style.display = 'none'; return; }
+
+  warn.style.display = 'block';
+  warn.innerHTML = `⚠️ <strong>Possível duplicidade:</strong> já existe a OC <strong>${dup.nf.numero}</strong> para a obra <strong>${dup.nf.obra}</strong> ` +
+    `(Fornecedor: ${dup.nf.fornecedor || '—'}, Valor: ${fmtVal(dup.nf.valor)}, Envio: ${fmtDateLabel(dup.envio.data)}).`;
+}
+
+function salvarNF() {
+  const obraSel = document.getElementById('fObra');
+  const obraCustom = document.getElementById('fObraCustom');
+  const obra = obraCanonica(obraSel.value === '__nova__' ? obraCustom.value.trim() : obraSel.value);
+  const faseEl = document.querySelector('input[name="fFase"]:checked');
+  const tipo = document.getElementById('fTipo').value;
+  const retencao = document.getElementById('fRetencao').checked && tipo === 'Mão de obra';
+
+  if (!document.getElementById('fForn').value.trim()) { alert('Informe o fornecedor.'); return; }
+  if (!faseEl) { alert('Selecione a Fase (Cinza ou Azul).'); return; }
+
+  const dup = findDuplicataOC(obra, document.getElementById('fNum').value, editNFId);
+  if (dup && !confirm(`Já existe a OC "${dup.nf.numero}" cadastrada para a obra "${dup.nf.obra}" (Envio ${fmtDateLabel(dup.envio.data)}). Deseja salvar mesmo assim?`)) {
+    return;
+  }
+
+  const nf = {
+    id: editNFId || 'NF_'+Date.now(),
+    numero:            document.getElementById('fNum').value.trim(),
+    semOC:             document.getElementById('fSemOC').checked,
+    ocNegativada:      document.getElementById('fOcNeg').checked,
+    faltaApropriacao:  document.getElementById('fFaltaApr').checked,
+    obra,
+    fase:              faseEl.value,
+    fornecedor:        document.getElementById('fForn').value.trim(),
+    tipo,
+    tipoDoc:           document.getElementById('fTipoDoc').value,
+    numDoc:            document.getElementById('fNumDoc').value.trim(),
+    valor:             Number(document.getElementById('fVal').value || 0),
+    vencimento:        document.getElementById('fVen').value,
+    formaPag:          document.getElementById('fFormaPag').value,
+    retencao,
+    retPct:            retencao ? document.getElementById('fRetPct').value : null,
+  };
+
+  const envio = envios.find(e => e.id === currentEnvioId);
+  if (!envio) return;
+  if (editNFId) {
+    const idx = envio.nfs.findIndex(n => n.id === editNFId);
+    if (idx >= 0) {
+      nf.vinculado = !!envio.nfs[idx].vinculado;
+      nf.arquivado = !!envio.nfs[idx].arquivado;
+      envio.nfs[idx] = nf;
+    }
+  } else {
+    envio.nfs.push(nf);
+  }
+  openCards.add(currentEnvioId);
+  persist();
+  closeModalNF();
+}
+
+function toggleVinculado(envioId, nfId) {
+  const envio = envios.find(e => e.id === envioId);
+  if (!envio) return;
+  const nf = envio.nfs.find(n => n.id === nfId);
+  if (!nf) return;
+  nf.vinculado = !nf.vinculado;
+  openCards.add(envioId);
+  persist();
+}
+
+function deleteNF(envioId, nfId) {
+  if (!confirm('Excluir esta NF?')) return;
+  const envio = envios.find(e => e.id === envioId);
+  if (!envio) return;
+  envio.nfs = envio.nfs.filter(n => n.id !== nfId);
+  persist();
+}
+
+// ============================================================
+// FORM HELPERS
+// ============================================================
+function selectOcSit(sit) {
+  const ids  = { semOC:'fSemOC', ocNegativada:'fOcNeg', faltaApropriacao:'fFaltaApr' };
+  const boxes= { semOC:'ocSemBox', ocNegativada:'ocNegBox', faltaApropriacao:'ocAprBox' };
+  const cb = document.getElementById(ids[sit]);
+  if (event && event.target.tagName !== 'INPUT') cb.checked = !cb.checked;
+  const isActive = cb.checked;
+  Object.keys(ids).forEach(k => {
+    if (k !== sit) { document.getElementById(ids[k]).checked = false; document.getElementById(boxes[k]).classList.remove('active'); }
+  });
+  document.getElementById(boxes[sit]).classList.toggle('active', isActive);
+}
+
+function selectFase(fase) {
+  document.getElementById('fFaseCinza').checked = fase === 'Cinza';
+  document.getElementById('fFaseAzul').checked  = fase === 'Azul';
+  document.getElementById('faseCinzaBox').classList.toggle('active', fase === 'Cinza');
+  document.getElementById('faseAzulBox').classList.toggle('active',  fase === 'Azul');
+}
+
+function onTipoChange() {
+  const tipo = document.getElementById('fTipo').value;
+  const row = document.getElementById('retencaoRow');
+  row.style.display = tipo === 'Mão de obra' ? 'block' : 'none';
+  if (tipo !== 'Mão de obra') {
+    document.getElementById('fRetencao').checked = false;
+    document.getElementById('retencaoBox').classList.remove('active');
+    document.getElementById('retencaoPctRow').style.display = 'none';
+  }
+}
+
+function toggleRetencaoForm() {
+  const cb = document.getElementById('fRetencao');
+  if (event.target.tagName !== 'INPUT') cb.checked = !cb.checked;
+  document.getElementById('retencaoBox').classList.toggle('active', cb.checked);
+  document.getElementById('retencaoPctRow').style.display = cb.checked ? 'block' : 'none';
+}
+
+function onObraChange(sel) {
+  const custom = document.getElementById('fObraCustom');
+  custom.style.display = sel.value === '__nova__' ? 'block' : 'none';
+  if (sel.value === '__nova__') custom.focus();
+}
+
+// ============================================================
+// PDF
+// ============================================================
+function togglePdfPorObra() {
+  const cb = document.getElementById('pdfPorObra');
+  const box = document.getElementById('pdfPorObraBox');
+  if (event.target.tagName !== 'INPUT') cb.checked = !cb.checked;
+  box.classList.toggle('active', cb.checked);
+  document.getElementById('pdfFiltroObraRow').style.display = cb.checked ? 'none' : 'block';
+  const infoBox = document.getElementById('pdfInfoBox');
+  const btn = document.getElementById('pdfGerarBtn');
+  if (cb.checked) {
+    const obras = [...new Set(allNFs().map(n => n.obra).filter(Boolean))].sort();
+    infoBox.innerHTML = `
+      <div>📁 <strong style="color:var(--text-primary)">Um PDF por obra</strong> — ${obras.length} arquivo(s) serão gerados</div>
+      <div style="font-size:11px;padding-left:1.2rem;color:var(--text-muted)">${obras.join(' · ') || 'Nenhuma obra cadastrada'}</div>`;
+    btn.textContent = `📁 Gerar ${obras.length} PDF(s)`;
+  } else {
+    infoBox.innerHTML = `
+      <div>📄 <strong style="color:var(--text-primary)">Arquivo único</strong> — todas as obras no mesmo PDF</div>
+      <div style="font-size:11px;padding-left:1.2rem">A Regularizar · Pagamentos da Semana · Vencidos</div>`;
+    btn.textContent = '📄 Gerar PDF';
+  }
+}
+
+function gerarPDF() {
+  const obras = [...new Set(allNFs().map(n => n.obra).filter(Boolean))].sort();
+  const pObra = document.getElementById('pdfFiltroObra');
+  pObra.innerHTML = '<option value="">Todas as obras (arquivo único)</option>' + obras.map(o => `<option>${o}</option>`).join('');
+  const pEnvio = document.getElementById('pdfFiltroEnvio');
+  pEnvio.innerHTML = '<option value="">Todos os envios</option>' + [...envios].sort((a,b)=>b.data.localeCompare(a.data)).map(e =>
+    `<option value="${e.id}">${fmtDateLabel(e.data)}${e.obs?' — '+e.obs:''} (${e.nfs.length} NFs)</option>`
+  ).join('');
+  // Reset toggle
+  document.getElementById('pdfPorObra').checked = false;
+  document.getElementById('pdfPorObraBox').classList.remove('active');
+  document.getElementById('pdfFiltroObraRow').style.display = 'block';
+  document.getElementById('pdfInfoBox').innerHTML = `
+    <div>📄 <strong style="color:var(--text-primary)">Arquivo único</strong> — todas as obras no mesmo PDF</div>
+    <div style="font-size:11px;padding-left:1.2rem">A Regularizar · Pagamentos da Semana · Vencidos</div>`;
+  document.getElementById('pdfGerarBtn').textContent = '📄 Gerar PDF';
+  document.getElementById('pdfModalBg').classList.add('open');
+}
+
+function closePdfModal() { document.getElementById('pdfModalBg').classList.remove('open'); }
+
+function confirmarPDF() {
+  const porObra     = document.getElementById('pdfPorObra').checked;
+  const envioFiltro = document.getElementById('pdfFiltroEnvio').value;
+  const obraFiltro  = document.getElementById('pdfFiltroObra').value;
+  closePdfModal();
+
+  if (porObra) {
+    // Considera SOMENTE as obras que realmente possuem NF no(s) envio(s) selecionado(s)
+    const enviosBase = envioFiltro ? envios.filter(e => e.id === envioFiltro) : envios;
+    const obras = [...new Set(enviosBase.flatMap(e => e.nfs || []).map(n => n.obra).filter(Boolean))].sort();
+    if (!obras.length) { alert('Nenhuma obra com lançamentos no envio selecionado.'); return; }
+    // Gera um PDF por vez com pequeno delay para não travar o navegador
+    obras.reduce((promise, obra, i) => {
+      return promise.then(() => new Promise(resolve => {
+        setTimeout(() => { gerarPDFComFiltros(envioFiltro, obra); resolve(); }, i * 600);
+      }));
+    }, Promise.resolve());
+  } else {
+    gerarPDFComFiltros(envioFiltro, obraFiltro);
+  }
+}
+
+function gerarPDFComFiltros(envioFiltroId, obraFiltro) {
+  if (!window.jspdf) { alert('Biblioteca PDF carregando, aguarde.'); return; }
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation:'landscape', unit:'mm', format:'a4' });
+
+  const COR_PRETO   = [23,23,26];
+  const COR_VERM    = [230,48,48];
+  const COR_CINZA   = [60,60,68];
+  const COR_AMARELO = [245,158,11];
+  const COR_VERDE   = [34,197,94];
+  const COR_AZUL    = [59,130,246];
+  const COR_TEXTO   = [40,40,45];
+  const COR_MUTED   = [130,130,140];
+  const COR_BRANCO  = [255,255,255];
+  const W = doc.internal.pageSize.getWidth();
+  const H = doc.internal.pageSize.getHeight();
+
+  const hoje    = new Date();
+  const dataFmt = hoje.toLocaleDateString('pt-BR');
+  const horaFmt = hoje.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+  const hojeStr = hoje.toISOString().slice(0,10);
+
+  // Filtrar envios
+  let enviosFiltro = envioFiltroId ? envios.filter(e => e.id === envioFiltroId) : [...envios];
+  let base = enviosFiltro.flatMap(e => e.nfs.map(n => ({...n, _envioData: e.data, _envioObs: e.obs})));
+  if (obraFiltro) base = base.filter(n => n.obra === obraFiltro);
+
+  const filtroLabel = (envioFiltroId ? `Envio ${fmtDateLabel(enviosFiltro[0]?.data)}` : 'Todos os envios') + (obraFiltro ? ` · ${obraFiltro}` : '');
+
+  // Nada para imprimir -> não gera arquivo em branco
+  if (!base.length) {
+    alert('Nenhum lançamento encontrado para: ' + filtroLabel + '\n\nO PDF não foi gerado.');
+    return;
+  }
+
+  // Header
+  function drawHeader() {
+    doc.setFillColor(...COR_PRETO);
+    doc.rect(0,0,W,20,'F');
+    doc.setFillColor(...COR_VERM);
+    doc.rect(0,20,W,2,'F');
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(13);
+    doc.setTextColor(...COR_BRANCO);
+    doc.text('Controle de Pagamento',10,11);
+    doc.setFont('helvetica','normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(180,180,190);
+    doc.text('RELATÓRIO DE ENVIOS — '+filtroLabel,10,17);
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(8);
+    doc.setTextColor(200,200,210);
+    doc.text(dataFmt+' às '+horaFmt,W-10,17,{align:'right'});
+  }
+
+  // Helper quadro
+  let cy = 28;
+  function drawQuadro(titulo, cor, items, colunas) {
+    items = [...items].sort((a,b) =>
+      (a.obra||'').localeCompare(b.obra||'', 'pt-BR') ||
+      (a.fornecedor||'').localeCompare(b.fornecedor||'', 'pt-BR'));
+    if (cy > H - 50) { doc.addPage(); drawHeader(); cy = 28; }
+    doc.setFillColor(...cor);
+    doc.rect(10,cy,W-20,8,'F');
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(9);
+    doc.setTextColor(...COR_BRANCO);
+    doc.text(`${titulo}  (${items.length})`,14,cy+5.5);
+    cy += 8;
+
+    if (!items.length) {
+      doc.setFillColor(248,248,250);
+      doc.rect(10,cy,W-20,8,'F');
+      doc.setFont('helvetica','italic');
+      doc.setFontSize(8);
+      doc.setTextColor(...COR_MUTED);
+      doc.text('Nenhum registro neste quadro.',14,cy+5.5);
+      cy += 12;
+      return;
+    }
+
+    const head = [colunas.map(c=>c.label)];
+    const body = items.map(i => colunas.map(c => c.fn(i)));
+
+
+    doc.autoTable({
+      head, body, startY: cy,
+      margin:{left:10,right:10},
+      styles:{font:'helvetica',fontSize:7.5,cellPadding:1.8,textColor:COR_TEXTO,lineColor:[220,220,225],lineWidth:0.1},
+      headStyles:{fillColor:[235,235,240],textColor:COR_CINZA,fontStyle:'bold',fontSize:7},
+      alternateRowStyles:{fillColor:[250,250,252]},
+      columnStyles: Object.fromEntries(colunas.map((c,i)=>[i,{cellWidth:c.w,halign:c.align||'left'}])),
+      didParseCell: function(d) {
+        if (d.section!=='body') return;
+        const col = colunas[d.column.index];
+        if (col?.color) {
+          const cor = col.color(d.cell.raw, items[d.row.index]);
+          if (cor) { d.cell.styles.textColor=cor; d.cell.styles.fontStyle='bold'; }
+        }
+      }
+    });
+    const finalY = doc.lastAutoTable.finalY;
+    const total = items.reduce((s,i)=>s+Number(i.valor||0),0);
+    const totalLiq = items.reduce((s,i)=>s+calcLiquido(i),0);
+    doc.setFillColor(235,235,242);
+    doc.rect(10,finalY,W-20,7,'F');
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(8);
+    doc.setTextColor(...COR_TEXTO);
+    doc.text(`Total bruto: ${fmtVal(total)}`,14,finalY+4.8);
+    doc.setTextColor(...COR_CINZA);
+    doc.text(`Total líquido: ${fmtVal(totalLiq)}`,W/2,finalY+4.8,{align:'center'});
+    doc.text(`${items.length} registro(s)`,W-12,finalY+4.8,{align:'right'});
+    cy = finalY + 11;
+  }
+
+  const colFase = r => r==='Azul'?COR_AZUL:r==='Cinza'?[120,120,130]:null;
+  const colTipo = r => r==='Mão de obra'?[128,70,0]:r==='Material'?[12,68,124]:null;
+  const colVenc = (r,i) => { const s=getVencStatus(i); return s==='vencido'?[230,48,48]:s==='alerta'?[245,158,11]:null; };
+  const colOcSit = r => r==='OC Neg.'?[220,50,50]:r==='Falta Aprop.'?[140,60,210]:r==='Sem OC'?[130,130,145]:null;
+
+  const COLS = [
+    {label:'Envio',    w:20, fn:i=>fmtDateLabel(i._envioData)},
+    {label:'Nº OC',   w:16, fn:i=>i.numero||'—'},
+    {label:'Sit. OC', w:20, align:'center', fn:i=>{const s=getOcSit(i);return s==='semOC'?'Sem OC':s==='ocNegativada'?'OC Neg.':s==='faltaApropriacao'?'Falta Aprop.':'—';}, color:(r)=>colOcSit(r)},
+    {label:'Fase',    w:14, align:'center', fn:i=>i.fase||'—', color:(r)=>colFase(r)},
+    {label:'Obra',    w:28, fn:i=>i.obra||'—'},
+    {label:'Fornecedor',w:34,fn:i=>i.fornecedor||'—'},
+    {label:'Tipo',    w:18, align:'center', fn:i=>i.tipo||'Material', color:(r)=>colTipo(r)},
+    {label:'Documento',w:20,fn:i=>`${i.tipoDoc||'NF'} ${i.numDoc||''}`.trim()},
+    {label:'Valor',   w:24, align:'right', fn:i=>fmtVal(i.valor)},
+    {label:'Ret.',    w:12, align:'center', fn:i=>i.retencao?(i.retPct?i.retPct+'%':'11%'):'—', color:(r)=>r!=='—'?[220,50,50]:null},
+    {label:'Vlr Liq.',w:24, align:'right', fn:i=>fmtVal(calcLiquido(i))},
+    {label:'Vencimento',w:20,align:'center',fn:i=>fmtDate(i.vencimento),color:(r,i)=>colVenc(r,i)},
+    {label:'Pgto',    w:22, align:'center', fn:i=>i.formaPag||'—'},
+  ];
+
+  const inicioSemana = (() => { const d=new Date(hoje); d.setDate(d.getDate()-d.getDay()); return d.toISOString().slice(0,10); })();
+  const fimSemana    = (() => { const d=new Date(hoje); d.setDate(d.getDate()+(6-d.getDay())); return d.toISOString().slice(0,10); })();
+
+  const aRegularizar = base.filter(n => n.semOC || n.ocNegativada || n.faltaApropriacao);
+  const vencidos     = base.filter(n => {
+    if (n.semOC || n.ocNegativada || n.faltaApropriacao) return false;
+    if (!n.vencimento) return false;
+    return n.vencimento < hojeStr;
+  });
+  const envioSemana  = base.filter(n => {
+    if (n.semOC || n.ocNegativada || n.faltaApropriacao) return false;
+    if (n.vencimento && n.vencimento < hojeStr) return false;
+    // Sem filtro de envio, restringe o quadro aos envios da semana corrente
+    if (!envioFiltroId && n._envioData && (n._envioData < inicioSemana || n._envioData > fimSemana)) return false;
+    return true;
+  });
+
+  const tituloEnvio = envioFiltroId
+    ? `ENVIO ${fmtDateLabel(enviosFiltro[0]?.data)}`
+    : 'ENVIO DA SEMANA';
+
+  drawHeader();
+  drawQuadro('PAGAMENTOS A REGULARIZAR', COR_AMARELO, aRegularizar, COLS);
+  drawQuadro(tituloEnvio, COR_CINZA, envioSemana, COLS);
+  drawQuadro('PAGAMENTOS VENCIDOS', COR_VERM, vencidos, COLS);
+
+  // Rodapé
+  const totalPgs = doc.internal.getNumberOfPages();
+  for (let p=1;p<=totalPgs;p++) {
+    doc.setPage(p);
+    doc.setFillColor(245,245,248);
+    doc.rect(0,H-10,W,10,'F');
+    doc.setFont('helvetica','normal');
+    doc.setFontSize(7);
+    doc.setTextColor(...COR_MUTED);
+    doc.text(`Controle de Pagamento — ${filtroLabel}`,10,H-4);
+    doc.text(`Pág. ${p} de ${totalPgs}  |  ${dataFmt} ${horaFmt}`,W-10,H-4,{align:'right'});
+  }
+
+  const sufEnvio = envioFiltroId ? (enviosFiltro[0]?.data || hojeStr) : hojeStr;
+  const nome = `relatorio_${(obraFiltro||'todos').replace(/\s+/g,'_')}_${sufEnvio}.pdf`;
+  doc.save(nome);
+}
+
+// ============================================================
+// ABAS
+// ============================================================
+function showTab(t) {
+  for (const [k, view, tab] of [['envios', 'viewEnvios', 'tabEnvios'], ['pastas', 'viewPastas', 'tabPastas'], ['eng', 'viewEng', 'tabEng']]) {
+    document.getElementById(view).style.display = t === k ? '' : 'none';
+    document.getElementById(tab).classList.toggle('active', t === k);
+  }
+  if (t === 'pastas') renderPastas();
+  if (t === 'eng') renderEng();
+}
+
+function escHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// ============================================================
+// PASTAS DAS OBRAS
+// ============================================================
+const PASTAS_KEY = 'mph_pastas_obras_v1';
+const SEM_ARQUIVO_KEY = 'mph_obras_sem_arquivo_v1';
+let pastas = {};
+let semArquivo = {};   // obras que só vinculam, sem copiar PDFs para a pasta
+
+function loadPastas() {
+  // os caminhos vêm da nuvem; toda obra é arquivada (a opção "só vincula" deixou de existir)
+  semArquivo = {};
+}
+function savePastas() {
+  salvarConfig('pastas', pastas);
+}
+function toggleArquivar(input) {
+  const obra = input.dataset.obra;
+  if (input.checked) delete semArquivo[obra]; else semArquivo[obra] = true;
+  savePastas();
+  renderPastas();
+  atualizarBadgePastas();
+}
+
+function segmentos(p) {
+  return String(p || '').trim().replace(/^["']|["']$/g, '').split(/[\\/]+/).map(s => s.trim()).filter(Boolean);
+}
+
+// lista fixa de obras do formulário de NF (capturada uma vez, antes de virar dinâmica)
+let OBRAS_FIXAS = null;
+function obrasFixas() {
+  if (!OBRAS_FIXAS) OBRAS_FIXAS = [...document.getElementById('fObra').options].map(o => o.value).filter(v => v && v !== '__nova__');
+  return OBRAS_FIXAS;
+}
+function listaObras() {
+  return [...new Set([...obrasFixas(), ...allNFs().map(n => n.obra).filter(Boolean), ...Object.keys(pastas), ...Object.keys(semArquivo)]
+    .map(obraCanonica))]
+    .sort((a, b) => a.localeCompare(b, 'pt-BR'));
+}
+
+// ---------- APELIDOS / UNIFICAR OBRAS ----------
+const ALIAS_KEY = 'mph_obras_alias_v1';
+let aliasObras = {};   // { "nome antigo": "nome que vale" }
+function saveAlias() { salvarConfig('alias', aliasObras); }
+function obraCanonica(nome) {
+  let n = nome; const vistos = new Set();
+  while (n && aliasObras[n] && !vistos.has(n)) { vistos.add(n); n = aliasObras[n]; }
+  return n;
+}
+// converte lançamentos que ainda estejam com nome antigo (ex.: vindos de importação)
+function aplicarAliases() {
+  let mudou = 0;
+  for (const e of envios) for (const n of e.nfs) {
+    const c = obraCanonica(n.obra);
+    if (c && c !== n.obra) { n.obra = c; mudou++; }
+  }
+  if (mudou) agendarSync();
+  return mudou;
+}
+function contarLancamentos(obra) { return allNFs().filter(n => n.obra === obra).length; }
+
+function unificarObra(sel) {
+  const de = sel.dataset.obra, para = sel.value;
+  sel.value = '';
+  if (!para || para === de) return;
+  const qtd = contarLancamentos(de);
+  const levaPasta = segmentos(pastas[de]).length && !segmentos(pastas[para]).length;
+  if (!confirm(`Unificar "${de}" em "${para}"?\n\n• ${qtd} lançamento(s) passam a ficar em "${para}".\n• "${de}" some da lista de obras e vira apelido: se aparecer de novo, é convertido sozinho.` +
+    (levaPasta ? `\n• O caminho de pasta de "${de}" passa para "${para}".` : ''))) return;
+  aliasObras[de] = para;
+  for (const k of Object.keys(aliasObras)) if (aliasObras[k] === de) aliasObras[k] = para;   // apelidos encadeados
+  delete aliasObras[para];
+  if (levaPasta) pastas[para] = pastas[de];
+  if (semArquivo[de] && !segmentos(pastas[para]).length) semArquivo[para] = true;
+  delete pastas[de]; delete semArquivo[de];
+  saveAlias(); savePastas();
+  aplicarAliases();
+  persist();
+  renderPastas();
+  alert(`✅ "${de}" unificada em "${para}". ${qtd} lançamento(s) atualizados.`);
+}
+function removerApelido(nome) {
+  if (!confirm(`Remover o apelido "${nome}"? Os lançamentos já unificados continuam como estão; só deixa de converter esse nome no futuro.`)) return;
+  delete aliasObras[nome]; saveAlias(); renderPastas();
+}
+function apelidosDe(o) { return Object.keys(aliasObras).filter(k => aliasObras[k] === o).sort(); }
+
+// select de obras do formulário de NF passa a usar a lista unificada
+function preencherSelectObras() {
+  const sel = document.getElementById('fObra');
+  obrasFixas();
+  const atual = sel.value;
+  sel.innerHTML = '<option value="">— Selecionar obra —</option>' +
+    listaObras().map(o => `<option value="${escHtml(o)}">${escHtml(o)}</option>`).join('') +
+    '<option value="__nova__">+ Cadastrar nova obra...</option>';
+  if ([...sel.options].some(o => o.value === atual)) sel.value = atual;
+}
+
+// Pasta que você seleciona na hora do vínculo: a parte comum dos caminhos, parando na pasta do OneDrive
+function raizComum(obras) {
+  const lista = (obras || Object.keys(pastas)).filter(o => !semArquivo[o]).map(o => segmentos(pastas[o])).filter(s => s.length);
+  if (!lista.length) return '';
+  let comum = lista[0].slice();
+  for (const s of lista.slice(1)) {
+    let i = 0;
+    while (i < comum.length && i < s.length && comum[i].toLowerCase() === s[i].toLowerCase()) i++;
+    comum = comum.slice(0, i);
+  }
+  const iOne = comum.findIndex(x => /^onedrive/i.test(x));
+  if (iOne >= 0) comum = comum.slice(0, iOne + 1);
+  return comum.join('\\');
+}
+
+function obrasSemPasta() {
+  return listaObras().filter(o => !semArquivo[o] && !segmentos(pastas[o]).length && contarLancamentos(o) > 0);
+}
+
+function atualizarBadgePastas() {
+  const b = document.getElementById('pastasBadge');
+  if (b) b.textContent = obrasSemPasta().length || '';
+}
+
+function setPasta(input) {
+  const obra = input.dataset.obra;
+  const v = input.value.trim().replace(/^["']|["']$/g, '');
+  if (v) pastas[obra] = v; else delete pastas[obra];
+  savePastas();
+  renderPastas();
+  atualizarBadgePastas();
+}
+
+function statusPasta(caminho) {
+  const s = segmentos(caminho);
+  if (!s.length) return '<span class="badge alerta">sem caminho</span>';
+  if (/^18\b/.test(s[s.length - 1])) return '<span class="badge pago">✓ ok</span>';
+  return '<span class="badge azul" title="O caminho não termina em 18 - Notas Fiscais. Na hora de arquivar, o script procura essa pasta dentro dele.">✓ procura a pasta 18</span>';
+}
+
+function renderPastas() {
+  const obras = listaObras();
+  const raiz = raizComum();
+  const falta = obrasSemPasta().length;
+  document.getElementById('viewPastas').innerHTML = `
+  <div class="pastas-wrap">
+    <div class="info-card">
+      Se a mesma obra aparecer com dois nomes (ex.: "Hilton e Rosana" e "Estúdio PRG - Hilton e Rozana"), use <strong>É a mesma obra que…</strong> na linha do nome que deve sumir.<br>
+      Cole o caminho completo da pasta <strong>18 - Notas Fiscais</strong> de cada obra. Toda obra precisa de caminho: NF, boletos e recibos vão sempre para a pasta.<br> Para copiar, abra a pasta no Explorer, clique na barra de endereço e copie.<br>
+      Ao clicar em <strong>⚡ Vincular</strong>, a NF, os boletos e os recibos vinculados com sucesso são copiados para a subpasta do mês do envio (ex.: <span class="path">10 - OUTUBRO</span>), criada se ainda não existir.<br>
+      ${raiz
+        ? `Na hora do vínculo, o navegador vai pedir permissão para gravar. Selecione esta pasta: <span class="path">${escHtml(raiz)}</span>`
+        : `Depois de cadastrar os caminhos, aqui aparece a pasta que você vai selecionar na hora do vínculo.`}
+      ${falta ? `<br><span style="color:var(--amber)">⚠️ ${falta} obra(s) com lançamentos e sem caminho — os lançamentos delas são vinculados, mas não arquivados.</span>` : ''}
+    </div>
+    <div class="envio-card" style="overflow:visible">
+      <div class="tbl-wrap">
+      <table class="pastas-tbl">
+        <thead><tr><th>Obra (como está no Controle)</th><th>Lanç.</th><th style="width:100%">Caminho da pasta 18 - Notas Fiscais</th><th>Status</th><th title="Junte duas obras que são a mesma">É a mesma obra que…</th></tr></thead>
+        <tbody>
+        ${obras.map(o => `<tr>
+          <td>${escHtml(o)}${apelidosDe(o).map(a => `<div style="font-size:10.5px;color:var(--text-muted);font-weight:400;margin-top:2px">também: ${escHtml(a)} <a href="#" onclick="removerApelido(this.dataset.a);return false" data-a="${escHtml(a)}" style="color:var(--text-dim)" title="Remover apelido">✕</a></div>`).join('')}</td>
+          <td style="text-align:center;color:var(--text-muted)">${contarLancamentos(o)}</td>
+          <td><input class="pasta-input" data-obra="${escHtml(o)}" value="${escHtml(pastas[o] || '')}" onchange="setPasta(this)" ${semArquivo[o] ? 'disabled style="opacity:.4" placeholder="Não arquiva — só vincula no sistema"' : 'placeholder="Cole aqui o caminho da pasta 18 - Notas Fiscais"'}></td>
+          <td>${semArquivo[o] ? '<span class="badge sem-oc">só vincula</span>' : statusPasta(pastas[o])}</td>
+          <td><select class="filter" style="padding:5px 8px;font-size:12px;max-width:220px" data-obra="${escHtml(o)}" onchange="unificarObra(this)">
+            <option value="">—</option>${obras.filter(x => x !== o).map(x => `<option value="${escHtml(x)}">${escHtml(x)}</option>`).join('')}
+          </select></td>
+        </tr>`).join('')}
+        </tbody>
+      </table>
+      </div>
+    </div>
+  </div>`;
+}
+
+// ============================================================
+// VINCULAR NO SISTEMA
+// ============================================================
+let ultimoScript = '';
+let ultimoTotal = 0;
+
+async function copiarTexto(t) {
+  try { await navigator.clipboard.writeText(t); return true; } catch(e) {}
+  const ta = document.createElement('textarea');
+  ta.value = t;
+  ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0';
+  document.body.appendChild(ta);
+  ta.select();
+  let ok = false;
+  try { ok = document.execCommand('copy'); } catch(e) {}
+  ta.remove();
+  return ok;
+}
+
+// Mesmo critério da tela: busca, obra, fase e filtros rápidos
+function nfVisivel(n) {
+  const sr = document.getElementById('searchInput').value.trim().toLowerCase();
+  const fObra = document.getElementById('filtroObra').value;
+  const fFase = document.getElementById('filtroFase').value;
+  if (fObra && n.obra !== fObra) return false;
+  if (fFase && n.fase !== fFase) return false;
+  if (!matchesChips(n)) return false;
+  if (sr && !`${n.fornecedor} ${n.obra} ${n.numDoc} ${n.numero} ${n.tipoDoc}`.toLowerCase().includes(sr)) return false;
+  return true;
+}
+function filtroAtivo() {
+  return !!(document.getElementById('searchInput').value.trim() || document.getElementById('filtroObra').value ||
+    document.getElementById('filtroFase').value || activeChips.size);
+}
+
+function vincularNoSistema(envioId) {
+  const envio = envios.find(e => e.id === envioId);
+  if (!envio) return;
+
+  const comFiltro = filtroAtivo();
+  const base = envio.nfs.filter(nfVisivel);
+  const lista = [], fora = [];
+  let jaVinculadas = 0;
+  for (const n of base) {
+    if (n.vinculado) { jaVinculadas++; continue; }   // já vinculadas não entram e não precisam de aviso
+    const oc = String(n.numero || '').replace(/\D/g, '');
+    const desc = `${n.tipoDoc || 'NF'} ${n.numDoc || 's/nº'} — ${n.fornecedor || '?'}${n.obra ? ' (' + n.obra + ')' : ''}`;
+    let motivo = '';
+    if (n.semOC)                                    motivo = 'Sem OC';
+    else if (n.ocNegativada)                             motivo = 'OC Negativada (sem saldo no sistema)';
+    else if (!oc)                                        motivo = 'sem nº de OC';
+    else if (!String(n.numDoc || '').replace(/\D/g, '')) motivo = 'sem nº do documento';
+    else if (!n.vencimento)                              motivo = 'sem vencimento';
+    else if (!(Number(n.valor) > 0))                     motivo = 'sem valor';
+    if (motivo) { fora.push({ desc, motivo }); continue; }
+    lista.push({
+      id: n.id, oc, nf: String(n.numDoc).trim(), serie: 1, tipo: n.tipoDoc || 'NF',
+      vencimento: n.vencimento, valor: Number(n.valor), fornecedor: n.fornecedor || '',
+      obra: n.obra || '', formaPag: n.formaPag || '', fase: n.fase || ''
+    });
+  }
+
+  const obras = [...new Set(lista.map(i => i.obra))];
+  const naoArquivar = obras.filter(o => semArquivo[o]);
+  const semPasta = obras.filter(o => !semArquivo[o] && !segmentos(pastas[o]).length);
+  const raiz = raizComum(obras.filter(o => !semPasta.includes(o) && !semArquivo[o]));
+  const dados = {
+    envio: { id: envio.id, data: envio.data },
+    raiz: segmentos(raiz).pop() || '',
+    pastas: Object.fromEntries(obras.map(o => [o, semArquivo[o] ? '' : (pastas[o] || '')])),
+    naoArquivar,
+    lista
+  };
+  ultimoTotal = lista.length;
+  ultimoScript = lista.length
+    ? document.getElementById('tplVincular').textContent.replace('/*__DADOS__*/null', () => JSON.stringify(dados))
+    : '';
+
+  document.getElementById('vincTitle').textContent = `⚡ Vincular no sistema — envio ${fmtDateLabel(envio.data)}`;
+  const body = document.getElementById('vincBody');
+  const avisos = `
+    ${jaVinculadas ? `<div style="font-size:12px;color:var(--text-muted);margin:-4px 0 12px">✓ ${jaVinculadas} lançamento(s) já vinculado(s) — não entram no script.</div>` : ''}
+    ${fora.length ? `<div class="vinc-box warn">${fora.length} lançamento(s) ficaram de fora:
+      <ul>${fora.map(f => `<li>${escHtml(f.desc)} — <strong>${escHtml(f.motivo)}</strong></li>`).join('')}</ul></div>` : ''}
+    ${semPasta.length ? `<div class="vinc-box warn">Sem caminho na aba <strong>📁 Pastas das obras</strong> (vincula, mas não arquiva):
+      <ul>${semPasta.map(o => `<li>${escHtml(o || 'obra não informada')}</li>`).join('')}</ul></div>` : ''}`;
+
+  if (!lista.length) {
+    body.innerHTML = `<div class="vinc-box warn">Nenhum lançamento deste envio está pronto para vincular.</div>${avisos}`;
+    document.getElementById('modalVincBg').classList.add('open');
+    return;
+  }
+
+  body.innerHTML = `
+    <div class="vinc-box" id="vincStatus">Copiando o script...</div>
+    ${comFiltro ? `<div class="vinc-box">🔍 Filtro ativo: entram só os <strong>${base.length}</strong> de ${envio.nfs.length} lançamento(s) visíveis na tela.</div>` : ''}
+    ${avisos}
+    <ol>
+      <li>Abra o <strong>novo.sistemamphengenharia.com</strong> já logado.</li>
+      <li>Aperte <strong>F12</strong>, vá em <strong>Console</strong>, cole (Ctrl+V) e aperte <strong>Enter</strong>.</li>
+      <li>${naoArquivar.length === obras.length
+        ? 'No painel, escolha a <strong>pasta da semana</strong> (nenhuma obra deste envio é arquivada).'
+        : `No painel, escolha a <strong>pasta da semana</strong> e a pasta <strong>${escHtml(dados.raiz || 'OneDrive - MPH Engenharia')}</strong>.`}</li>
+      <li>Confira a prévia (OC → Pedido, fornecedor e cliente) e clique em <strong>Vincular</strong>.</li>
+      <li>No fim, clique em <strong>📋 Copiar retorno</strong> e cole aqui em <strong>↩ Colar retorno</strong>.</li>
+    </ol>`;
+  document.getElementById('modalVincBg').classList.add('open');
+  copiarDeNovo();
+}
+
+async function copiarDeNovo() {
+  const st = document.getElementById('vincStatus');
+  if (!ultimoScript || !st) return;
+  const ok = await copiarTexto(ultimoScript);
+  const n = ultimoTotal;
+  st.className = 'vinc-box ' + (ok ? 'ok' : 'warn');
+  st.textContent = ok
+    ? `✔ Script copiado com ${n} lançamento(s). Agora é só colar no Console do sistema.`
+    : 'Não consegui copiar automaticamente. Clique em "Copiar script de novo".';
+}
+
+function closeVinc() { document.getElementById('modalVincBg').classList.remove('open'); }
+
+// NFs já vinculadas (✓) e ainda sem 📁: copia para a pasta da obra, rodando aqui mesmo no Controle
+function arquivarPendentes(envioId) {
+  const envio = envios.find(e => e.id === envioId);
+  if (!envio) return;
+  const base = envio.nfs.filter(nfVisivel).filter(n => n.vinculado && !n.arquivado && !semArquivo[n.obra]);
+  const semCaminho = [...new Set(base.filter(n => !segmentos(pastas[n.obra]).length).map(n => n.obra || 'obra não informada'))];
+  const lista = base.filter(n => segmentos(pastas[n.obra]).length).map(n => ({
+    id: n.id, oc: String(n.numero || '').replace(/\D/g, ''), nf: String(n.numDoc || '').trim(), tipo: n.tipoDoc || 'NF',
+    vencimento: n.vencimento, valor: Number(n.valor), fornecedor: n.fornecedor || '', obra: n.obra || '', fase: n.fase || ''
+  }));
+  if (!lista.length) {
+    alert(base.length
+      ? `Nenhuma NF pendente de arquivo com caminho cadastrado.\nObras sem caminho: ${semCaminho.join(', ')}`
+      : 'Nenhuma NF vinculada pendente de arquivo neste envio (as já arquivadas têm 📁).');
+    return;
+  }
+  if (!window.showDirectoryPicker) { alert('Este navegador não permite escolher pastas. Abra o Controle no Chrome ou no Edge.'); return; }
+  if (!confirm(`Arquivar ${lista.length} NF(s) vinculada(s) que ainda não estão na pasta da obra?` +
+      (semCaminho.length ? `\n\nFicam de fora (sem caminho cadastrado): ${semCaminho.join(', ')}` : '') +
+      `\n\nVai abrir um painel para escolher a pasta da semana e a pasta OneDrive.`)) return;
+  const obras = [...new Set(lista.map(i => i.obra))];
+  const dados = {
+    modo: 'arquivar',
+    envio: { id: envio.id, data: envio.data },
+    raiz: segmentos(raizComum(obras)).pop() || '',
+    pastas: Object.fromEntries(obras.map(o => [o, pastas[o] || ''])),
+    naoArquivar: [],
+    lista
+  };
+  window.__mphAplicarRetorno = aplicarRetornoObj;
+  const script = document.getElementById('tplVincular').textContent.replace('/*__DADOS__*/null', () => JSON.stringify(dados));
+  try { new Function(script)(); } catch (e) { alert('Não consegui iniciar o arquivamento: ' + e.message); }
+}
+
+// ============================================================
+// RETORNO DO SISTEMA
+// ============================================================
+function openRetorno() {
+  document.getElementById('fRetorno').value = '';
+  document.getElementById('retornoMsg').textContent = '';
+  document.getElementById('modalRetBg').classList.add('open');
+}
+function closeRetorno() { document.getElementById('modalRetBg').classList.remove('open'); }
+
+async function colarRetornoClipboard() {
+  try { document.getElementById('fRetorno').value = await navigator.clipboard.readText(); }
+  catch(e) { document.getElementById('retornoMsg').textContent = 'Não consegui ler a área de transferência — cole com Ctrl+V.'; }
+}
+
+function aplicarRetorno() {
+  const msg = document.getElementById('retornoMsg');
+  let r;
+  try { r = JSON.parse(document.getElementById('fRetorno').value.trim()); }
+  catch(e) { msg.textContent = 'Texto inválido. Cole exatamente o que o botão "Copiar retorno" copiou.'; return; }
+  if (!r || r.tipo !== 'mph-retorno-vinculo' || !Array.isArray(r.itens)) {
+    msg.textContent = 'Isso não parece um retorno do script de vínculo.'; return;
+  }
+  closeRetorno();
+  aplicarRetornoObj(r);
+}
+function aplicarRetornoObj(r) {
+  let vinc = 0, arq = 0, nao = 0;
+  for (const it of r.itens) {
+    let achou = false;
+    for (const e of envios) {
+      const nf = e.nfs.find(n => n.id === it.id);
+      if (!nf) continue;
+      nf.vinculado = true; vinc++;
+      if (it.arquivado) { nf.arquivado = true; arq++; }
+      openCards.add(e.id);
+      achou = true;
+      break;
+    }
+    if (!achou) nao++;
+  }
+  let fasesMud = 0;
+  for (const f of (r.fases || [])) {
+    for (const e of envios) {
+      const nf = e.nfs.find(n => n.id === f.id);
+      if (nf) { if (nf.fase !== f.fase) { nf.fase = f.fase; fasesMud++; } openCards.add(e.id); break; }
+    }
+  }
+  persist();
+  alert(`✅ ${vinc} lançamento(s) marcados como vinculados, ${arq} arquivado(s) na pasta da obra.` +
+    (fasesMud ? `\n🔄 ${fasesMud} lançamento(s) com a fase corrigida.` : '') +
+    (nao ? `\n${nao} não encontrado(s) no Controle (talvez tenham sido excluídos).` : ''));
+}
+
+// ============================================================
+// NUVEM (Supabase) — login, leitura e gravação
+// ============================================================
+// Os envios ficam na tabela "envios" (um registro por envio, lançamentos em "nfs").
+// Pastas das obras, apelidos e importações já feitas ficam na tabela "config".
+let sb = null;
+let sincronizado = new Map();   // id do envio → como ele está gravado na nuvem
+let importados = [];            // ids de lançamentos já importados de arquivo
+let syncTimer = null, syncando = false, syncDeNovo = false;
+
+const serializarEnvio = e => JSON.stringify({ id: e.id, data: e.data || '', obs: e.obs || '', nfs: e.nfs || [] });
+
+function mostrarLogin(msg) {
+  document.body.classList.add('bloqueado');
+  document.getElementById('loginBg').classList.add('open');
+  document.getElementById('lMsg').textContent = msg || 'Abrindo…';
+}
+const irParaEntrada = () => location.replace('./');
+
+async function iniciarNuvem() {
+  const cfg = window.MPH_CONFIG || {};
+  if (!window.supabase || !cfg.supabaseUrl || !cfg.supabaseAnonKey || /COLE/i.test(cfg.supabaseUrl + cfg.supabaseAnonKey)) {
+    mostrarLogin(window.supabase ? 'Falta configurar o Supabase: preencha o arquivo config.js.' : 'Não consegui carregar a biblioteca do Supabase. Confira a internet e recarregue.');
+    return;
+  }
+  sb = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey);
+  const { data } = await sb.auth.getSession();
+  if (data && data.session) await aposLogin();
+  else irParaEntrada();   // sem sessão: volta para a tela do PIN
+}
+
+async function aposLogin() {
+  const { data: ehAdmin, error } = await sb.rpc('eh_admin');
+  if (error || !ehAdmin) {
+    if (error && !/JWT|auth/i.test(error.message)) { mostrarLogin('Erro ao conferir o acesso: ' + error.message); return; }
+    await sb.auth.signOut();
+    irParaEntrada();
+    return;
+  }
+  try { await carregarNuvem(); }
+  catch (e) { mostrarLogin('Não consegui ler os dados da nuvem: ' + e.message); return; }
+  document.getElementById('loginBg').classList.remove('open');
+  document.body.classList.remove('bloqueado');
+  desenharTudo();
+  statusNuvem('ok');
+  if (!envios.length) setTimeout(() => alert('A nuvem ainda está vazia.\n\nPara trazer os dados que estavam no seu navegador: abra o Controle antigo, clique em "💾 Salvar na pasta" e depois, aqui, em "📥 Importar arquivo" escolha o CONTROLE_DADOS.json.'), 300);
+}
+
+function desenharTudo() {
+  loadPastas();
+  aplicarAliases();
+  preencherSelectObras();
+  atualizarBadgePastas();
+  renderSummary();
+  renderEnvios();
+  populateFiltros();
+}
+
+async function carregarNuvem() {
+  const [r1, r2] = await Promise.all([sb.from('envios').select('id,data,obs,nfs'), sb.from('config').select('chave,valor')]);
+  if (r1.error) throw r1.error;
+  if (r2.error) throw r2.error;
+  envios = r1.data.map(r => ({ id: r.id, data: r.data || '', obs: r.obs || '', nfs: Array.isArray(r.nfs) ? r.nfs : [] }));
+  sincronizado = new Map(envios.map(e => [e.id, serializarEnvio(e)]));
+  const cfg = Object.fromEntries(r2.data.map(r => [r.chave, r.valor]));
+  pastas = cfg.pastas || {};
+  aliasObras = cfg.alias || {};
+  importados = Array.isArray(cfg.importados) ? cfg.importados : [];
+}
+
+function statusNuvem(estado, msg) {
+  const el = document.getElementById('nuvemStatus');
+  if (!el) return;
+  el.className = 'nuvem ' + (estado === 'ok' ? 'ok' : estado === 'erro' ? 'erro' : '');
+  el.textContent = estado === 'ok' ? '☁️ Salvo' : estado === 'erro' ? '⚠️ Não salvou — clique para tentar de novo' : '⏳ Salvando…';
+  el.title = msg || '';
+}
+
+function agendarSync() {
+  if (!sb) return;
+  statusNuvem('salvando');
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(sincronizar, 400);
+}
+
+// grava só os envios que mudaram e apaga os que foram excluídos
+async function sincronizar() {
+  clearTimeout(syncTimer); syncTimer = null;
+  if (syncando) { syncDeNovo = true; return; }
+  syncando = true;
+  try {
+    const atuais = new Map(envios.map(e => [e.id, serializarEnvio(e)]));
+    const mudaram = envios.filter(e => atuais.get(e.id) !== sincronizado.get(e.id))
+      .map(e => ({ id: e.id, data: e.data || null, obs: e.obs || '', nfs: e.nfs || [], atualizado_em: new Date().toISOString() }));
+    const removidos = [...sincronizado.keys()].filter(id => !atuais.has(id));
+    if (mudaram.length) { const { error } = await sb.from('envios').upsert(mudaram); if (error) throw error; }
+    if (removidos.length) { const { error } = await sb.from('envios').delete().in('id', removidos); if (error) throw error; }
+    sincronizado = atuais;
+    statusNuvem('ok');
+  } catch (e) {
+    statusNuvem('erro', e.message || String(e));
+  } finally {
+    syncando = false;
+    if (syncDeNovo) { syncDeNovo = false; sincronizar(); }
+  }
+}
+
+async function salvarConfig(chave, valor) {
+  if (!sb) return;
+  statusNuvem('salvando');
+  const { error } = await sb.from('config').upsert({ chave, valor, atualizado_em: new Date().toISOString() });
+  if (error) statusNuvem('erro', error.message); else if (!syncTimer && !syncando) statusNuvem('ok');
+}
+
+const temAlteracaoPendente = () => !!syncTimer || syncando || envios.some(e => serializarEnvio(e) !== sincronizado.get(e.id));
+
+window.addEventListener('beforeunload', ev => {
+  if (sb && temAlteracaoPendente()) { sincronizar(); ev.preventDefault(); ev.returnValue = ''; }
+});
+
+// ao voltar para a aba, puxa o que mudou em outro computador (se não houver nada pendente aqui)
+document.addEventListener('visibilitychange', async () => {
+  if (document.visibilityState !== 'visible' || !sb || document.body.classList.contains('bloqueado')) return;
+  if (temAlteracaoPendente() || document.querySelector('.modal-bg.open')) return;
+  try {
+    await carregarNuvem();
+    desenharTudo();
+    if (document.getElementById('viewPastas').style.display !== 'none') renderPastas();
+  } catch (e) { /* segue com o que está na tela */ }
+});
+
+async function sairAdmin() {
+  if (temAlteracaoPendente()) await sincronizar();
+  if (!confirm('Sair deste aparelho? Para entrar de novo, use o seu PIN de administrador.')) return;
+  await sb.auth.signOut();
+  irParaEntrada();
+}
+
+async function trocarPinAdmin() {
+  const p1 = (prompt('Novo PIN de administrador (8 números ou mais):') || '').trim();
+  if (!p1) return;
+  if (!/^\d{8,12}$/.test(p1)) { alert('O PIN de administrador precisa ter de 8 a 12 números (o de 6 é dos engenheiros).'); return; }
+  if (/^(\d)\1+$/.test(p1) || '01234567890123'.includes(p1) || '98765432109876'.includes(p1)) { alert('PIN fácil demais. Escolha outro.'); return; }
+  if ((prompt('Repita o novo PIN:') || '').trim() !== p1) { alert('Os PINs não são iguais. Nada foi alterado.'); return; }
+  const { error } = await sb.auth.updateUser({ password: p1 });
+  alert(error ? 'Não consegui trocar o PIN: ' + error.message : '✅ PIN de administrador trocado.');
+}
+
+// ============================================================
+// IMPORTAR ARQUIVO
+// ============================================================
+// Aceita: lançamentos da semana gerados pelo Claude (IMPORTACAO_*.json ou IMPORTACOES_CONTROLE.js)
+// e o CONTROLE_DADOS.json do Controle antigo (migração dos dados do navegador para a nuvem).
+function abrirImportacao() { document.getElementById('fImportArq').click(); }
+
+async function importarArquivo(input) {
+  const f = input.files && input.files[0];
+  input.value = '';
+  if (!f) return;
+  const txt = await f.text();
+  let obj;
+  try {
+    if (/\.js$/i.test(f.name) || /MPH_IMPORTACOES/.test(txt)) { const w = {}; new Function('window', txt)(w); obj = w.MPH_IMPORTACOES; }
+    else obj = JSON.parse(txt);
+  } catch (e) { alert('Não consegui ler o arquivo: ' + e.message); return; }
+  if (obj && Array.isArray(obj.envios)) { await migrarDados(obj, f.name); return; }
+  const lotes = Array.isArray(obj) ? obj : obj && Array.isArray(obj.lotes) ? obj.lotes : obj && Array.isArray(obj.nfs) ? [obj] : null;
+  if (!lotes) { alert('Não reconheci este arquivo. Use o arquivo de importação gerado pelo Claude ou o CONTROLE_DADOS.json.'); return; }
+  importarLotes(lotes);
+}
+
+// Cada lançamento entra uma única vez: o que você apagar depois não volta,
+// e o que você editar (OC, fase, vencimento...) não é sobrescrito.
+function importarLotes(lotes) {
+  const feitos = new Set(importados);
+  const chave = n => [n.fornecedor, n.numDoc, n.vencimento, Number(n.valor).toFixed(2)].join('|').toLowerCase();
+  const resumo = [];
+  let repetidos = 0;
+  for (const lote of lotes) {
+    if (!lote || !lote.data || !Array.isArray(lote.nfs)) continue;
+    let card = envios.find(e => e.data === lote.data);
+    const novos = lote.nfs.filter(n => n && n.id && !feitos.has(n.id));
+    repetidos += lote.nfs.length - novos.length;
+    if (!novos.length) continue;
+    if (!card) { card = { id: lote.id || ('ENV_' + Date.now()), data: lote.data, obs: lote.obs || '', nfs: [] }; envios.push(card); }
+    const existentes = new Set(card.nfs.map(chave));
+    let add = 0;
+    for (const n of novos) {
+      feitos.add(n.id);
+      if (existentes.has(chave(n))) { repetidos++; continue; }
+      card.nfs.push({ ...n, obra: obraCanonica(n.obra) }); existentes.add(chave(n)); add++;
+    }
+    if (add) { resumo.push(`${fmtDateLabel(lote.data)}: ${add} lançamento(s)`); openCards.add(card.id); }
+  }
+  importados = [...feitos];
+  salvarConfig('importados', importados);
+  if (resumo.length) {
+    persist();
+    alert('📥 Importado:\n' + resumo.join('\n') + (repetidos ? `\n\n${repetidos} já tinham sido importados e foram ignorados.` : ''));
+  } else {
+    alert('Nada novo neste arquivo: todos os lançamentos já tinham sido importados.');
+  }
+}
+
+// CONTROLE_DADOS.json do Controle antigo → nuvem (não sobrescreve o que já está lá)
+async function migrarDados(obj, nome) {
+  const novos = obj.envios.filter(e => e && e.id && !envios.some(x => x.id === e.id));
+  const qtd = novos.reduce((s, e) => s + (Array.isArray(e.nfs) ? e.nfs.length : 0), 0);
+  const nPastas = Object.keys(obj.pastas || {}).filter(o => !pastas[o]).length;
+  if (!novos.length && !nPastas) { alert(`Nada novo em "${nome}": estes envios já estão na nuvem.`); return; }
+  if (!confirm(`Migrar "${nome}" para a nuvem?\n\n• ${novos.length} envio(s) com ${qtd} lançamento(s)` +
+      `\n• ${obj.envios.length - novos.length} envio(s) que já estão na nuvem ficam como estão` +
+      `\n• ${nPastas} caminho(s) de pasta de obra e os apelidos de obras`)) return;
+  for (const e of novos) envios.push({ id: e.id, data: e.data || '', obs: e.obs || '', nfs: Array.isArray(e.nfs) ? e.nfs : [] });
+  pastas = { ...(obj.pastas || {}), ...pastas };
+  aliasObras = { ...(obj.aliasObras || {}), ...aliasObras };
+  await salvarConfig('pastas', pastas);
+  await salvarConfig('alias', aliasObras);
+  desenharTudo();
+  persist();
+  await sincronizar();
+  alert(`✅ Migração concluída: ${novos.length} envio(s), ${qtd} lançamento(s).`);
+}
+
+// ============================================================
+// ENGENHEIROS (acesso de consulta por PIN)
+// ============================================================
+let engenheiros = [];
+
+async function carregarEngenheiros() {
+  const { data, error } = await sb.from('engenheiros').select('id,nome,obras,ativo,pin_hash').order('nome');
+  if (error) throw error;
+  engenheiros = data.map(e => ({ id: e.id, nome: e.nome, obras: e.obras || [], ativo: e.ativo, temPin: !!e.pin_hash }));
+}
+
+async function renderEng() {
+  const view = document.getElementById('viewEng');
+  if (!engenheiros.length) view.innerHTML = '<div class="pastas-wrap"><div class="info-card">Carregando…</div></div>';
+  try { await carregarEngenheiros(); }
+  catch (e) { view.innerHTML = `<div class="pastas-wrap"><div class="info-card">Não consegui ler os engenheiros: ${escHtml(e.message)}</div></div>`; return; }
+  const link = location.origin + location.pathname.replace(/[^/]*$/, '');
+  const obrasTodas = listaObras();
+  view.innerHTML = `
+  <div class="pastas-wrap">
+    <div class="info-card">
+      Cada engenheiro entra em <span class="path">${escHtml(link)}</span> com o próprio <strong>PIN de 6 dígitos</strong> e vê só as obras marcadas para ele:
+      os lançamentos <strong>vinculados</strong> e os que <strong>precisam resolver</strong> (Sem OC, OC Negativada, Falta Apropriação). Ele só consulta, não altera nada.<br>
+      Para dar acesso, clique em <strong>🔗 Convite</strong> e mande o link para o engenheiro (WhatsApp, e-mail): ele mesmo cria o PIN e o aparelho dele lembra.
+      Se ele esquecer, mande um convite novo — ou use <strong>✏️ Definir</strong> e passe o PIN para ele. O link vale 7 dias e serve uma vez só.
+      Desmarque <strong>Ativo</strong> para cortar o acesso sem apagar o cadastro.
+    </div>
+    <div class="eng-novo">
+      <input class="eng-input" id="engNovoNome" placeholder="Nome do engenheiro" onkeydown="if(event.key==='Enter') addEng()">
+      <button class="btn primary" onclick="addEng()">+ Adicionar engenheiro</button>
+    </div>
+    ${engenheiros.length ? `
+    <div class="envio-card" style="overflow:visible">
+      <div class="tbl-wrap">
+      <table class="pastas-tbl">
+        <thead><tr><th>Engenheiro</th><th style="width:100%">Obras</th><th>PIN</th><th>Ativo</th><th></th></tr></thead>
+        <tbody>
+        ${engenheiros.map(e => {
+          const lista = [...new Set([...obrasTodas, ...e.obras])].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+          return `<tr>
+          <td><input class="eng-input" value="${escHtml(e.nome)}" data-id="${e.id}" onchange="renomearEng(this)"></td>
+          <td><details class="eng-obras"><summary>${e.obras.length ? escHtml(e.obras.join(', ')) : '<span style="color:var(--amber)">nenhuma obra — clique para marcar</span>'}</summary>
+            <div class="lista">${lista.map(o => `<label><input type="checkbox" class="link-check" data-id="${e.id}" data-obra="${escHtml(o)}" ${e.obras.includes(o) ? 'checked' : ''} onchange="marcarObraEng(this)"> ${escHtml(o)}</label>`).join('')}</div>
+          </details></td>
+          <td><div class="eng-acoes">
+            ${e.temPin ? '<span class="badge pago">✓ definido</span>' : '<span class="badge alerta">sem PIN</span>'}
+            <button class="btn sm" data-id="${e.id}" onclick="conviteEng(this.dataset.id)">🔗 Convite</button>
+            <button class="btn sm" data-id="${e.id}" onclick="definirPinEng(this.dataset.id)">✏️ Definir</button>
+          </div></td>
+          <td style="text-align:center"><input type="checkbox" class="link-check" data-id="${e.id}" ${e.ativo ? 'checked' : ''} onchange="ativarEng(this)"></td>
+          <td><button class="btn sm outline-red" data-id="${e.id}" onclick="excluirEng(this.dataset.id)" title="Excluir">✕</button></td>
+        </tr>`; }).join('')}
+        </tbody>
+      </table>
+      </div>
+    </div>` : ''}
+  </div>`;
+}
+
+async function engUpdate(id, patch) {
+  const { error } = await sb.from('engenheiros').update(patch).eq('id', id);
+  if (error) { alert('Não consegui salvar: ' + error.message); await renderEng(); return false; }
+  return true;
+}
+async function addEng() {
+  const inp = document.getElementById('engNovoNome');
+  const nome = inp.value.trim();
+  if (!nome) { inp.focus(); return; }
+  const { data, error } = await sb.from('engenheiros').insert({ nome }).select('id').single();
+  if (error) { alert('Não consegui adicionar: ' + error.message); return; }
+  await renderEng();
+  if (confirm(`${nome} adicionado.\n\nGerar agora o link para ${nome} criar o próprio PIN? Depois é só marcar as obras dele.`)) await conviteEng(data.id);
+}
+async function renomearEng(inp) {
+  const nome = inp.value.trim();
+  if (!nome) { renderEng(); return; }
+  await engUpdate(inp.dataset.id, { nome });
+}
+async function marcarObraEng(cb) {
+  const e = engenheiros.find(x => x.id === cb.dataset.id);
+  if (!e) return;
+  const obras = cb.checked ? [...new Set([...e.obras, cb.dataset.obra])] : e.obras.filter(o => o !== cb.dataset.obra);
+  if (await engUpdate(e.id, { obras })) {
+    e.obras = obras;
+    const sum = cb.closest('details').querySelector('summary');
+    sum.innerHTML = obras.length ? escHtml(obras.join(', ')) : '<span style="color:var(--amber)">nenhuma obra — clique para marcar</span>';
+  }
+}
+async function ativarEng(cb) { await engUpdate(cb.dataset.id, { ativo: cb.checked }); }
+async function excluirEng(id) {
+  const e = engenheiros.find(x => x.id === id);
+  if (!e || !confirm(`Excluir ${e.nome}? O PIN dele deixa de funcionar na hora.`)) return;
+  const { error } = await sb.from('engenheiros').delete().eq('id', id);
+  if (error) alert('Não consegui excluir: ' + error.message);
+  await renderEng();
+}
+async function salvarPinEng(id, pin) {
+  const e = engenheiros.find(x => x.id === id);
+  const { error } = await sb.rpc('admin_definir_pin', { p_id: id, p_pin: pin });
+  if (error) { alert('PIN não salvo: ' + error.message); return; }
+  await renderEng();
+  alert(`PIN de ${e ? e.nome : 'engenheiro'}: ${pin}\n\nAnote e passe para ele. Por segurança, o PIN não fica visível depois.`);
+}
+async function conviteEng(id) {
+  const e = engenheiros.find(x => x.id === id);
+  const { data: token, error } = await sb.rpc('admin_gerar_convite', { p_id: id });
+  if (error) { alert('Não consegui gerar o convite: ' + error.message); return; }
+  const link = location.origin + location.pathname.replace(/[^/]*$/, '') + '?convite=' + token;
+  const copiou = await copiarTexto(link);
+  prompt(`${copiou ? '✔ Link copiado. ' : ''}Mande para ${e ? e.nome : 'o engenheiro'} — ele abre, cria o PIN de 6 números e já entra.\nVale 7 dias e uma vez só.`, link);
+}
+async function gerarPinEng(id) {
+  const e = engenheiros.find(x => x.id === id);
+  if (e && e.temPin && !confirm(`Gerar um PIN novo para ${e.nome}? O PIN atual deixa de funcionar.`)) return;
+  const pin = String(crypto.getRandomValues(new Uint32Array(1))[0] % 1000000).padStart(6, '0');
+  await salvarPinEng(id, pin);
+}
+async function definirPinEng(id) {
+  const e = engenheiros.find(x => x.id === id);
+  const pin = (prompt(`PIN de ${e ? e.nome : 'engenheiro'} (6 números):`) || '').trim();
+  if (!pin) return;
+  if (!/^\d{6}$/.test(pin)) { alert('O PIN precisa ter exatamente 6 números.'); return; }
+  await salvarPinEng(id, pin);
+}
+
+// ============================================================
+// SALVAR NA PASTA — CONTROLE_DADOS.json ao lado do HTML
+// ============================================================
+// Os dados ficam no navegador; este arquivo é a cópia que o Claude lê.
+// 1º clique: escolha a pasta onde está o CONTROLE DE PAGAMENTO.html.
+// Depois disso, a cada alteração a cópia é atualizada sozinha (enquanto o
+// Chrome mantiver a permissão; se pedir de novo, é só clicar no botão).
+let pastaControle = null, timerPasta = null;
+function idbAbrir() {
+  return new Promise((ok, erro) => {
+    const r = indexedDB.open('mph-controle', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('h');
+    r.onsuccess = () => ok(r.result); r.onerror = () => erro(r.error);
+  });
+}
+async function idbGet(k) {
+  try { const db = await idbAbrir(); return await new Promise(ok => { const q = db.transaction('h').objectStore('h').get(k); q.onsuccess = () => ok(q.result || null); q.onerror = () => ok(null); }); }
+  catch (e) { return null; }
+}
+async function idbSet(k, v) {
+  try { const db = await idbAbrir(); await new Promise(ok => { const t = db.transaction('h', 'readwrite'); t.objectStore('h').put(v, k); t.oncomplete = ok; t.onerror = ok; }); }
+  catch (e) {}
+}
+function dadosParaSalvar() {
+  return JSON.stringify({ salvoEm: new Date().toISOString(), envios, pastas, semArquivo, aliasObras }, null, 1);
+}
+async function escreverNaPasta(dir) {
+  const h = await dir.getFileHandle('CONTROLE_DADOS.json', { create: true });
+  const w = await h.createWritable();
+  await w.write(dadosParaSalvar());
+  await w.close();
+}
+async function salvarNaPasta() {
+  if (!window.showDirectoryPicker) { alert('Este navegador não permite gravar em pastas. Abra o Controle no Chrome ou no Edge.'); return; }
+  try {
+    let dir = await idbGet('pasta');
+    if (dir && (await dir.requestPermission({ mode: 'readwrite' })) !== 'granted') dir = null;
+    if (!dir) {
+      dir = await showDirectoryPicker({ id: 'mph-controle', mode: 'readwrite' });
+      let temHtml = true;
+      try { await dir.getFileHandle('CONTROLE DE PAGAMENTO.html'); } catch (e) { temHtml = false; }
+      if (!temHtml && !confirm(`A pasta "${dir.name}" não tem o CONTROLE DE PAGAMENTO.html. Salvar nela mesmo assim?`)) return;
+      await idbSet('pasta', dir);
+    }
+    await escreverNaPasta(dir);
+    pastaControle = dir;
+    alert(`✅ Dados salvos em "${dir.name}\\CONTROLE_DADOS.json".\nA partir de agora a cópia se atualiza sozinha a cada alteração.`);
+  } catch (e) {
+    if (e.name !== 'AbortError') alert('Não consegui salvar na pasta: ' + e.message);
+  }
+}
+function autoSalvarPasta() {
+  if (!pastaControle) return;
+  clearTimeout(timerPasta);
+  timerPasta = setTimeout(async () => {
+    try { if ((await pastaControle.queryPermission({ mode: 'readwrite' })) === 'granted') await escreverNaPasta(pastaControle); }
+    catch (e) {}
+  }, 800);
+}
+// ao abrir: se o Chrome ainda tem a permissão, já atualiza a cópia sem perguntar
+(async () => {
+  const dir = await idbGet('pasta');
+  try { if (dir && (await dir.queryPermission({ mode: 'readwrite' })) === 'granted') { pastaControle = dir; autoSalvarPasta(); } } catch (e) {}
+})();
+
+// ============================================================
+// INIT
+// ============================================================
+document.getElementById('modalEnvioBg').addEventListener('click', e => { if(e.target===e.currentTarget) closeModalEnvio(); });
+document.getElementById('modalNFBg').addEventListener('click',    e => { if(e.target===e.currentTarget) closeModalNF(); });
+document.getElementById('pdfModalBg').addEventListener('click',   e => { if(e.target===e.currentTarget) closePdfModal(); });
+document.getElementById('modalVincBg').addEventListener('click',  e => { if(e.target===e.currentTarget) closeVinc(); });
+document.getElementById('modalRetBg').addEventListener('click',   e => { if(e.target===e.currentTarget) closeRetorno(); });
+
+obrasFixas();     // guarda a lista fixa de obras antes do select virar dinâmico
+iniciarNuvem();   // login → carrega da nuvem → desenha a tela
+</script>
+</body>
+</html>
