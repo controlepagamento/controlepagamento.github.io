@@ -450,8 +450,8 @@ body{background:transparent !important}
 <!-- ABAS -->
 <div class="tabs">
   <button class="tab active" id="tabEnvios" onclick="showTab('envios')">📦 Envios</button>
-  <button class="tab" id="tabPastas" onclick="showTab('pastas')">📁 Pastas das obras <span class="tab-badge" id="pastasBadge" title="Obras sem caminho cadastrado"></span></button>
-  <button class="tab" id="tabEng" onclick="showTab('eng')">👷 Engenheiros</button>
+  <button class="tab" id="tabPastas" onclick="showTab('pastas')">🏗️ Obras <span class="tab-badge" id="pastasBadge" title="Obras sem caminho cadastrado"></span></button>
+  <button class="tab" id="tabEng" onclick="showTab('eng')">👥 Usuários</button>
 </div>
 
 <div id="viewEnvios">
@@ -2426,8 +2426,9 @@ function obrasFixas() {
   if (!OBRAS_FIXAS) OBRAS_FIXAS = [...document.getElementById('fObra').options].map(o => o.value).filter(v => v && v !== '__nova__');
   return OBRAS_FIXAS;
 }
+let obrasCad = null;   // obras cadastradas (config "obras" na nuvem)
 function listaObras() {
-  return [...new Set([...obrasFixas(), ...allNFs().map(n => n.obra).filter(Boolean), ...Object.keys(pastas), ...Object.keys(semArquivo)]
+  return [...new Set([...(obrasCad || obrasFixas()), ...allNFs().map(n => n.obra).filter(Boolean), ...Object.keys(pastas), ...Object.keys(semArquivo)]
     .map(obraCanonica))]
     .sort((a, b) => a.localeCompare(b, 'pt-BR'));
 }
@@ -2467,6 +2468,7 @@ function unificarObra(sel) {
   if (levaPasta) pastas[para] = pastas[de];
   if (semArquivo[de] && !segmentos(pastas[para]).length) semArquivo[para] = true;
   delete pastas[de]; delete semArquivo[de];
+  if (obrasCad) { obrasCad = [...new Set(obrasCad.filter(o => o !== de).concat(obrasCad.includes(de) && !obrasCad.includes(para) ? [para] : []))]; salvarConfig('obras', obrasCad); }
   saveAlias(); savePastas();
   aplicarAliases();
   persist();
@@ -2545,10 +2547,14 @@ function renderPastas() {
         : `Depois de cadastrar os caminhos, aqui aparece a pasta que você vai selecionar na hora do vínculo.`}
       ${falta ? `<br><span style="color:var(--amber)">⚠️ ${falta} obra(s) com lançamentos e sem caminho — os lançamentos delas são vinculados, mas não arquivados.</span>` : ''}
     </div>
+    <div class="eng-novo">
+      <input class="eng-input" id="obraNovaNome" placeholder="Nome da nova obra (ex.: Marilia e Guto)" style="min-width:280px" onkeydown="if(event.key==='Enter') addObra()">
+      <button class="btn primary" onclick="addObra()">+ Cadastrar obra</button>
+    </div>
     <div class="envio-card" style="overflow:visible">
       <div class="tbl-wrap">
       <table class="pastas-tbl">
-        <thead><tr><th>Obra (como está no Controle)</th><th>Lanç.</th><th style="width:100%">Caminho da pasta 18 - Notas Fiscais</th><th>Status</th><th title="Junte duas obras que são a mesma">É a mesma obra que…</th></tr></thead>
+        <thead><tr><th>Obra (como está no Controle)</th><th>Lanç.</th><th style="width:100%">Caminho da pasta 18 - Notas Fiscais</th><th>Status</th><th title="Junte duas obras que são a mesma">É a mesma obra que…</th><th></th></tr></thead>
         <tbody>
         ${obras.map(o => `<tr>
           <td>${escHtml(o)}${apelidosDe(o).map(a => `<div style="font-size:10.5px;color:var(--text-muted);font-weight:400;margin-top:2px">também: ${escHtml(a)} <a href="#" onclick="removerApelido(this.dataset.a);return false" data-a="${escHtml(a)}" style="color:var(--text-dim)" title="Remover apelido">✕</a></div>`).join('')}</td>
@@ -2558,12 +2564,33 @@ function renderPastas() {
           <td><select class="filter" style="padding:5px 8px;font-size:12px;max-width:220px" data-obra="${escHtml(o)}" onchange="unificarObra(this)">
             <option value="">—</option>${obras.filter(x => x !== o).map(x => `<option value="${escHtml(x)}">${escHtml(x)}</option>`).join('')}
           </select></td>
+          <td>${contarLancamentos(o) ? '' : `<button class="btn sm outline-red" data-obra="${escHtml(o)}" onclick="removerObra(this.dataset.obra)" title="Remover obra (só obras sem lançamentos)">✕</button>`}</td>
         </tr>`).join('')}
         </tbody>
       </table>
       </div>
     </div>
   </div>`;
+}
+
+function addObra() {
+  const inp = document.getElementById('obraNovaNome');
+  const nome = inp.value.trim().replace(/\s+/g, ' ');
+  if (!nome) { inp.focus(); return; }
+  const existe = listaObras().find(o => o.toLowerCase() === nome.toLowerCase());
+  if (existe) { alert(`A obra "${existe}" já está cadastrada.`); return; }
+  obrasCad = [...(obrasCad || obrasFixas()), nome];
+  salvarConfig('obras', obrasCad);
+  renderPastas(); preencherSelectObras(); populateFiltros(); atualizarBadgePastas();
+  const novo = document.getElementById('obraNovaNome'); if (novo) novo.focus();
+}
+function removerObra(nome) {
+  if (contarLancamentos(nome)) { alert('Esta obra tem lançamentos e não pode ser removida.'); return; }
+  if (!confirm(`Remover a obra "${nome}" da lista?\n\nUsuários que tinham acesso a ela continuam com o nome marcado até você desmarcar na aba Usuários.`)) return;
+  obrasCad = (obrasCad || obrasFixas()).filter(o => o !== nome);
+  if (pastas[nome] !== undefined) { delete pastas[nome]; savePastas(); }
+  salvarConfig('obras', obrasCad);
+  renderPastas(); preencherSelectObras(); populateFiltros(); atualizarBadgePastas();
 }
 
 // ============================================================
@@ -2820,6 +2847,7 @@ async function aposLogin() {
   catch (e) { mostrarLogin('Não consegui ler os dados da nuvem: ' + e.message); return; }
   document.getElementById('loginBg').classList.remove('open');
   document.body.classList.remove('bloqueado');
+  if (!obrasCad) { obrasCad = [...new Set([...obrasFixas(), ...allNFs().map(n => n.obra).filter(Boolean)])]; salvarConfig('obras', obrasCad); }
   desenharTudo();
   statusNuvem('ok');
   if (!envios.length) setTimeout(() => alert('A nuvem ainda está vazia.\n\nPara trazer os dados que estavam no seu navegador: abra o Controle antigo, clique em "💾 Salvar na pasta" e depois, aqui, em "📥 Importar arquivo" escolha o CONTROLE_DADOS.json.'), 300);
@@ -2844,6 +2872,7 @@ async function carregarNuvem() {
   const cfg = Object.fromEntries(r2.data.map(r => [r.chave, r.valor]));
   pastas = cfg.pastas || {};
   aliasObras = cfg.alias || {};
+  obrasCad = Array.isArray(cfg.obras) ? cfg.obras : null;
   importados = Array.isArray(cfg.importados) ? cfg.importados : [];
 }
 
@@ -3016,27 +3045,27 @@ async function renderEng() {
   const view = document.getElementById('viewEng');
   if (!engenheiros.length) view.innerHTML = '<div class="pastas-wrap"><div class="info-card">Carregando…</div></div>';
   try { await carregarEngenheiros(); }
-  catch (e) { view.innerHTML = `<div class="pastas-wrap"><div class="info-card">Não consegui ler os engenheiros: ${escHtml(e.message)}</div></div>`; return; }
+  catch (e) { view.innerHTML = `<div class="pastas-wrap"><div class="info-card">Não consegui ler os usuários: ${escHtml(e.message)}</div></div>`; return; }
   const link = location.origin + location.pathname.replace(/[^/]*$/, '');
   const obrasTodas = listaObras();
   view.innerHTML = `
   <div class="pastas-wrap">
     <div class="info-card">
-      Cada engenheiro entra em <span class="path">${escHtml(link)}</span> com o próprio <strong>PIN de 6 dígitos</strong> e vê só as obras marcadas para ele:
+      Cada usuário entra em <span class="path">${escHtml(link)}</span> com o próprio <strong>PIN de 6 dígitos</strong> e vê só as obras marcadas para ele:
       os lançamentos <strong>vinculados</strong> e os que <strong>precisam resolver</strong> (Sem OC, OC Negativada, Falta Apropriação). Ele só consulta, não altera nada.<br>
       Para dar acesso, clique em <strong>🔗 Convite</strong> e mande o link para o engenheiro (WhatsApp, e-mail): ele mesmo cria o PIN e o aparelho dele lembra.
       Se ele esquecer, mande um convite novo — ou use <strong>✏️ Definir</strong> e passe o PIN para ele. O link vale 7 dias e serve uma vez só.
       Desmarque <strong>Ativo</strong> para cortar o acesso sem apagar o cadastro.
     </div>
     <div class="eng-novo">
-      <input class="eng-input" id="engNovoNome" placeholder="Nome do engenheiro" onkeydown="if(event.key==='Enter') addEng()">
-      <button class="btn primary" onclick="addEng()">+ Adicionar engenheiro</button>
+      <input class="eng-input" id="engNovoNome" placeholder="Nome do usuário" onkeydown="if(event.key==='Enter') addEng()">
+      <button class="btn primary" onclick="addEng()">+ Adicionar usuário</button>
     </div>
     ${engenheiros.length ? `
     <div class="envio-card" style="overflow:visible">
       <div class="tbl-wrap">
       <table class="pastas-tbl">
-        <thead><tr><th>Engenheiro</th><th style="width:100%">Obras</th><th>PIN</th><th>Ativo</th><th></th></tr></thead>
+        <thead><tr><th>Usuário</th><th style="width:100%">Obras que ele vê</th><th>PIN</th><th>Ativo</th><th></th></tr></thead>
         <tbody>
         ${engenheiros.map(e => {
           const lista = [...new Set([...obrasTodas, ...e.obras])].sort((a, b) => a.localeCompare(b, 'pt-BR'));
