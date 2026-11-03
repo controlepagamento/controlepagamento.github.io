@@ -341,6 +341,15 @@ tr:has(+ .linha-extra:not([hidden])) td{border-bottom:none}
   .oc-input{width:110px;font-size:16px}
   .coment-box textarea,.recado-form textarea{font-size:16px;min-width:0;flex-basis:100%}
 }
+
+/* PRAZO / LOTE / NF */
+.prazo{font-size:11px;font-weight:600;margin-top:4px;white-space:nowrap}
+.prazo.p-ok{color:var(--text-muted)}
+.prazo.p-amber{color:var(--amber)}
+.prazo.p-red{color:var(--accent)}
+.badge.vence{background:var(--amber-dim);color:var(--amber);border:1px solid rgba(245,158,11,0.35)}
+td.lote{white-space:nowrap;color:var(--text-muted);font-size:12px}
+.filtros select{max-width:100%}
 </style>
 </head>
 <body>
@@ -402,6 +411,7 @@ tr:has(+ .linha-extra:not([hidden])) td{border-bottom:none}
     <div class="resumo" id="resumo"></div>
     <div class="filtros">
       <input id="busca" placeholder="Buscar fornecedor, NF, OC..." oninput="desenhar()">
+      <select id="fLote" onchange="desenhar()" title="Lote = envio em que a cobrança chegou"><option value="">Todos os lotes</option></select>
     </div>
     <div id="listas"></div>
   </div>
@@ -506,6 +516,22 @@ function situacao(i) {
   return '<span class="badge aguard">⏳ Aguardando</span>';
 }
 const precisaResolver = i => i.ocNegativada || i.semOC || i.faltaApropriacao;
+// dias desde o lote (envio) em que a cobrança chegou
+const diasDesde = d => d ? Math.max(0, Math.round((Date.parse(hoje()) - Date.parse(String(d).slice(0, 10))) / 864e5)) : null;
+const diasAte = d => d ? Math.round((Date.parse(String(d).slice(0, 10)) - Date.parse(hoje())) / 864e5) : null;
+function prazo(i) {
+  const d = diasDesde(i.envio);
+  if (d == null) return '';
+  const cls = d > 14 ? 'p-red' : d > 7 ? 'p-amber' : 'p-ok';
+  return `<div class="prazo ${cls}" title="Desde o lote de ${data(i.envio)}">⏱ pendente ${d === 0 ? 'desde hoje' : d === 1 ? 'há 1 dia' : 'há ' + d + ' dias'}</div>`;
+}
+function venceEm(i) {
+  if (i.vinculado || !i.vencimento) return '';
+  const d = diasAte(i.vencimento);
+  if (d < 0) return ' <span class="badge vencido">vencido</span>';
+  if (d <= 5) return ` <span class="badge vence">${d === 0 ? 'vence hoje' : d === 1 ? 'vence amanhã' : 'vence em ' + d + ' dias'}</span>`;
+  return '';
+}
 const aguardando = i => !precisaResolver(i) && !i.vinculado;
 const ordemPend = i => i.ocNegativada ? 0 : i.semOC ? 1 : 2;
 
@@ -529,6 +555,7 @@ function linhaResposta(r) {
 function acoes(i) {
   const id = esc(i.id);
   let h = '';
+  if (i.temAnexo) h += `<button class="btn sm" data-acao="ver-nf" data-id="${id}" title="Abrir o PDF da NF">📄 NF</button>`;
   if (i.semOC) h += `<div class="acao-oc"><input class="oc-input" data-id="${id}" inputmode="numeric" placeholder="Nº da OC" autocomplete="off">
       <button class="btn sm primary" data-acao="oc" data-id="${id}">Enviar</button></div>`;
   if (i.ocNegativada) h += `<button class="btn sm primary" data-acao="liberada" data-id="${id}">✓ OC liberada</button>`;
@@ -538,19 +565,20 @@ function acoes(i) {
 }
 
 function linha(i, comObra, comAcoes) {
-  const venc = i.vencimento && i.vencimento < hoje() && !i.vinculado ? ' <span class="badge vencido">vencido</span>' : '';
+  const venc = venceEm(i);
   const ret = i.retencao && i.retPct ? `<div class="det">bruto ${brl(i.valor)} · ret. ${esc(i.retPct)}%</div>` : '';
   const fase = i.fase ? ` <span class="badge ${i.fase === 'Azul' ? 'azul' : 'cinza'}">${esc(i.fase)}</span>` : '';
   const resp = respostasDe(i.id);
-  const cols = 7;
+  const cols = 8;
   return `<tr data-id="${esc(i.id)}">
-    <td data-l="Situação">${situacao(i)}</td>
+    <td data-l="Situação"><div>${situacao(i)}${comAcoes ? prazo(i) : ''}</div></td>
     ${comObra ? `<td data-l="Obra"><div>${esc(i.obra)}${fase}</div></td>` : ''}
     <td data-l="Fornecedor"><div>${esc(i.fornecedor)}${comObra ? '' : fase}</div></td>
     <td data-l="OC">${i.oc ? esc(i.oc) : '—'}</td>
     <td data-l="Documento"><div>${esc(i.tipoDoc || 'NF')} ${esc(i.numDoc || '')}</div></td>
     <td data-l="Vencimento"><div>${data(i.vencimento)}${venc}</div></td>
     <td data-l="Valor" class="num"><div>${brl(liquido(i))}${ret}</div></td>
+    <td data-l="Lote" class="lote">${data(i.envio)}</td>
     ${comAcoes ? `<td data-l="Responder" class="col-acoes">${acoes(i)}</td>` : `<td data-l="" class="col-mini"><button class="btn sm" data-acao="abrir-coment" data-id="${esc(i.id)}" title="Deixar um comentário">💬</button></td>`}
   </tr>
   ${resp.length ? `<tr class="linha-extra"><td colspan="${cols + (comObra ? 1 : 0)}">${resp.slice(0, 4).map(linhaResposta).join('')}</td></tr>` : ''}
@@ -566,7 +594,7 @@ function tabela(titulo, lista, vazio, comObra, comAcoes, dica) {
     <div class="secao-cab"><h2>${titulo}</h2><span class="qtd">${lista.length} lançamento(s)</span><span class="tot">${brl(total)}</span></div>
     ${dica && lista.length ? `<div class="dica">${dica}</div>` : ''}
     ${lista.length ? `<table>
-      <thead><tr><th>Situação</th>${comObra ? '<th>Obra</th>' : ''}<th>Fornecedor</th><th>OC</th><th>Documento</th><th>Vencimento</th><th class="num">Valor</th><th>${comAcoes ? 'Responder ao Gustavo' : ''}</th></tr></thead>
+      <thead><tr><th>Situação</th>${comObra ? '<th>Obra</th>' : ''}<th>Fornecedor</th><th>OC</th><th>Documento</th><th>Vencimento</th><th class="num">Valor</th><th>Lote</th><th>${comAcoes ? 'Responder ao Gustavo' : ''}</th></tr></thead>
       <tbody>${lista.map(i => linha(i, comObra, comAcoes)).join('')}</tbody></table>` : `<div class="vazio">${vazio}</div>`}
   </div>`;
 }
@@ -596,8 +624,17 @@ function desenhar() {
   const busca = document.getElementById('busca').value.trim().toLowerCase();
   const obra = obraSel;
   desenharObras();
+  const selLote = document.getElementById('fLote');
+  const lotes = [...new Set((dados.itens || []).filter(i => !obra || i.obra === obra).map(i => i.envio).filter(Boolean))].sort().reverse();
+  const loteAtual = lotes.includes(selLote.value) ? selLote.value : '';
+  selLote.innerHTML = '<option value="">Todos os lotes</option>' + lotes.map(l => {
+    const n = (dados.itens || []).filter(i => i.envio === l && (!obra || i.obra === obra));
+    const p = n.filter(precisaResolver).length;
+    return `<option value="${esc(l)}">Lote ${data(l)} — ${n.length} cobrança(s)${p ? `, ${p} pendente(s)` : ''}</option>`;
+  }).join('');
+  selLote.value = loteAtual;
   const itens = (dados.itens || []).filter(i =>
-    (!obra || i.obra === obra) &&
+    (!obra || i.obra === obra) && (!loteAtual || i.envio === loteAtual) &&
     (!busca || `${i.fornecedor} ${i.numDoc} ${i.oc} ${i.obra}`.toLowerCase().includes(busca)));
   const pend = itens.filter(precisaResolver).sort((a, b) => ordemPend(a) - ordemPend(b) || String(a.vencimento).localeCompare(String(b.vencimento)));
   const aguard = itens.filter(aguardando).sort((a, b) => String(a.vencimento).localeCompare(String(b.vencimento)));
@@ -609,7 +646,7 @@ function desenhar() {
     <div class="card red"><div class="rot">Pendentes já vencidos</div><div class="val">${vencidas.length}</div><div class="sub">${soma(vencidas)}</div></div>
     <div class="card"><div class="rot">Aguardando vínculo</div><div class="val">${aguard.length}</div><div class="sub">${soma(aguard)}</div></div>
     <div class="card green"><div class="rot">Vinculadas</div><div class="val">${vinc.length}</div><div class="sub">${soma(vinc)}</div></div>`;
-  const onde = obra ? ' — ' + esc(obra) : '';
+  const onde = (obra ? ' — ' + esc(obra) : '') + (loteAtual ? ' · lote ' + data(loteAtual) : '');
   document.getElementById('listas').innerHTML =
     tabela('⚠️ Precisa resolver' + onde, pend, obra ? 'Nada pendente nesta obra. 🎉' : 'Nada pendente nas suas obras. 🎉', !obra, true,
       '<b>Responda aqui mesmo:</b> digite o nº da OC e aperte <b>Enter</b> — vai direto para o Gustavo e o cursor pula para a próxima. Use <b>✓ OC liberada</b> quando a negativação foi aprovada e <b>💬</b> para qualquer outra informação.') +
@@ -646,6 +683,7 @@ async function acaoClick(btn) {
     if (tr) { tr.hidden = !tr.hidden; if (!tr.hidden) tr.querySelector('textarea').focus(); }
     return;
   }
+  if (acao === 'ver-nf') { abrirNF(id, btn); return; }
   if (btn.disabled) return;
   const it = id ? itemPorId(id) : null;
   let oc = null, texto = null, obra = it ? it.obra : null, proximo = null;
@@ -698,6 +736,32 @@ document.addEventListener('keydown', ev => {
   }
 });
 
+async function abrirNF(id, btn) {
+  if (btn.disabled) return;
+  // navegador sem visualizador de PDF (ex.: Chrome do Android): baixa com o nome certo em vez de abrir aba
+  const semVisualizador = navigator.pdfViewerEnabled === false;
+  const w = semVisualizador ? null : window.open('', '_blank');
+  if (w) w.document.write('<p style="font:16px system-ui,sans-serif;padding:24px;color:#555">Abrindo a NF…</p>');
+  btn.disabled = true;
+  try {
+    const { data: r, error } = await sb.rpc('engenheiro_anexo', { p_pin: pinAtual, p_nf_id: id });
+    if (error) throw new Error('Não consegui abrir a NF agora. Tente de novo.');
+    if (r.erro) {
+      if (r.erro === 'pin' || r.erro === 'bloqueado') sair(ERROS[r.erro]);
+      throw new Error({ sem_anexo: 'O Gustavo ainda não anexou o PDF desta cobrança.', resolvido: 'Esta cobrança já foi resolvida. Clique em ↻ Atualizar.' }[r.erro] || ERROS[r.erro] || 'Não consegui abrir a NF.');
+    }
+    const bin = atob(r.b64), u8 = new Uint8Array(bin.length);
+    for (let k = 0; k < bin.length; k++) u8[k] = bin.charCodeAt(k);
+    const url = URL.createObjectURL(new Blob([u8], { type: 'application/pdf' }));
+    if (w && !w.closed) w.location.href = url;
+    else { const a = document.createElement('a'); a.href = url; a.download = r.nome || 'NF.pdf'; document.body.append(a); a.click(); a.remove(); }
+    setTimeout(() => URL.revokeObjectURL(url), 120000);
+  } catch (e) {
+    if (w && !w.closed) w.close();
+    toast(e.message, true);
+  } finally { btn.disabled = false; }
+}
+
 // quadro "Suas obras": um cartão por obra (clique para ver só ela) + "Todas"
 function desenharObras() {
   const obras = dados.obras || [];
@@ -716,7 +780,7 @@ function desenharObras() {
         ${ag.length ? `<span class="pill zero">${ag.length} aguardando</span>` : ''}
         <span class="pill ${vinc.length ? 'ok' : 'zero'}">${vinc.length} vinculada(s)</span>
       </span>
-      ${pend.length ? `<span class="tot">Pendente: ${brl(pend.reduce((s, i) => s + liquido(i), 0))}</span>` : ''}
+      ${pend.length ? `<span class="tot">Pendente: ${brl(pend.reduce((s, i) => s + liquido(i), 0))} · mais antiga há ${Math.max(...pend.map(i => diasDesde(i.envio) || 0))} dia(s)</span>` : ''}
     </button>`;
   };
   el.innerHTML = (obras.length > 1 ? cartao('', 'Todas as obras') : '') + obras.map(o => cartao(o, o)).join('');
