@@ -424,6 +424,8 @@ body{background:transparent !important}
 .resp-acoes{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:4px}
 .resp-acoes .resp-admin-input{flex:1;min-width:200px}
 .resp-dot{display:inline-block;margin-left:4px;font-size:10.5px;font-weight:700;padding:1px 6px;border-radius:10px;background:var(--amber-dim);color:var(--amber);cursor:pointer;white-space:nowrap}
+.mini-anexo{background:none;border:1px dashed var(--border-hover);border-radius:5px;cursor:pointer;font-size:11px;padding:0 4px;line-height:1.4}
+.mini-anexo:hover{border-style:solid}
 </style>
 </head>
 <body class="bloqueado">
@@ -440,6 +442,7 @@ body{background:transparent !important}
   </div>
 </div>
 <input type="file" id="fImportArq" accept=".json,.js" style="display:none" onchange="importarArquivo(this)">
+<input type="file" id="fAnexoManual" accept="application/pdf,.pdf" style="display:none" onchange="anexoManualEscolhido(this)">
 
 <div class="app">
 
@@ -456,6 +459,7 @@ body{background:transparent !important}
     <button class="tema-btn" type="button" onclick="alternarTema()">☀️</button>
     <span class="nuvem" id="nuvemStatus" onclick="if(this.classList.contains('erro')) sincronizar()">☁️ Conectando…</span>
     <button class="btn" onclick="abrirImportacao()" title="Importar os lançamentos da semana (arquivo gerado pelo Claude) ou migrar o CONTROLE_DADOS.json">📥 Importar arquivo</button>
+    <button class="btn" onclick="anexarPendentes()" title="Anexa o PDF da NF de cada cobrança em Precisa resolver, para o engenheiro abrir">📎 Anexar NFs pendentes</button>
     <button class="btn" onclick="salvarNaPasta()" title="Grava CONTROLE_DADOS.json na pasta do Controle (escolha a pasta onde está este HTML)">💾 Salvar na pasta</button>
     <button class="btn" onclick="openRetorno()" title="Marcar no Controle o que o script vinculou no sistema">↩ Colar retorno</button>
     <button class="btn outline-red" onclick="gerarPDF()">📄 Relatório PDF</button>
@@ -1794,7 +1798,7 @@ function renderEnvios() {
                 <input type="checkbox" class="link-check" title="Marcar como já vinculado no sistema" ${n.vinculado?'checked':''} onchange="toggleVinculado('${envio.id}','${n.id}')">
               </td>
               <td><strong>${highlight(n.numero||'—', srLower)}</strong>${respNovasDe(n.id) ? ` <span class="resp-dot" onclick="irParaRespostas()" title="Resposta nova de engenheiro — clique para ver">💬 ${respNovasDe(n.id)}</span>` : ''}</td>
-              <td>${ocBadge(n)||'—'}</td>
+              <td>${ocBadge(n)||'—'}${prazoAdm(n, envio)}</td>
               <td>${highlight(n.obra||'—', srLower)}</td>
               <td>${faseBadge(n.fase)}</td>
               <td>${highlight(n.fornecedor||'—', srLower)}</td>
@@ -2864,7 +2868,7 @@ async function aposLogin() {
     irParaEntrada();
     return;
   }
-  try { await carregarNuvem(); await carregarRespostas(); }
+  try { await carregarNuvem(); await carregarRespostas(); await carregarAnexos(); }
   catch (e) { mostrarLogin('Não consegui ler os dados da nuvem: ' + e.message); return; }
   document.getElementById('loginBg').classList.remove('open');
   document.body.classList.remove('bloqueado');
@@ -2954,6 +2958,7 @@ document.addEventListener('visibilitychange', async () => {
   try {
     await carregarNuvem();
     await carregarRespostas();
+    await carregarAnexos();
     desenharTudo();
     if (document.getElementById('viewPastas').style.display !== 'none') renderPastas();
   } catch (e) { /* segue com o que está na tela */ }
@@ -3386,6 +3391,123 @@ setInterval(async () => {
   if (v && v.style.display !== 'none' && !digitando) renderResp();
   if (respNovas().length !== antes) renderEnvios();
 }, 90000);
+
+// ============================================================
+// PDF DA NF NAS COBRANÇAS PENDENTES (para o engenheiro abrir)
+// ============================================================
+let anexosIds = new Set();
+const pendenteNF = n => !!(n && (n.semOC || n.ocNegativada || n.faltaApropriacao));
+const diasDesdeLote = d => d ? Math.max(0, Math.round((Date.parse(today()) - Date.parse(String(d).slice(0, 10))) / 864e5)) : null;
+
+async function carregarAnexos() {
+  if (!sb) return;
+  const { data, error } = await sb.from('anexos').select('nf_id');
+  if (error) { console.warn('anexos:', error.message); return; }
+  anexosIds = new Set((data || []).map(r => r.nf_id));
+}
+
+function prazoAdm(n, envio) {
+  if (!pendenteNF(n)) return '';
+  const d = diasDesdeLote(envio.data);
+  const cor = d > 14 ? 'var(--accent)' : d > 7 ? 'var(--amber)' : 'var(--text-muted)';
+  const pdf = anexosIds.has(n.id)
+    ? '<span title="PDF anexado — o engenheiro consegue abrir">📄</span>'
+    : `<button class="mini-anexo" onclick="anexarManual('${n.id}')" title="Anexar o PDF da NF para o engenheiro ver">📎</button>`;
+  return `<div style="font-size:10.5px;font-weight:700;color:${cor};margin-top:3px;white-space:nowrap">⏱ ${d == null ? '' : d + 'd'} ${pdf}</div>`;
+}
+
+const normA = s => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/\s+/g, ' ').trim();
+const PASTAS_IGNORAR = /^(DUPLICADOS?|DESCONSIDERADOS?|VERIFICAR|REMOVIDOS?\b.*)$/;
+async function listarPDFsRec(dir, pastas = [], out = []) {
+  for await (const [nome, h] of dir.entries()) {
+    if (h.kind === 'directory') { if (!PASTAS_IGNORAR.test(normA(nome))) await listarPDFsRec(h, [...pastas, nome], out); }
+    else if (/\.pdf$/i.test(nome)) out.push({ nome, handle: h, pastas });
+  }
+  return out;
+}
+// acha o PDF da NF (ou do recibo) de um lançamento, na pasta da obra; boleto só se não houver outro
+function acharPDFdaNF(arquivos, n, envioData, obrasConhecidas) {
+  const base = String(n.numDoc || '').trim().replace(/\s*-\s*\d{1,2}\s*$/, '');
+  const num = base.replace(/\D/g, '').replace(/^0+/, '');
+  if (!num) return { erro: 'sem nº do documento' };
+  const re = new RegExp(`(^|\\D)0*${num}(\\D|$)`);
+  const semData = nome => nome.replace(/^\s*\d{2}-\d{2}-\d{2,4}\s*/, '');
+  const obraN = normA(n.obra);
+  let c = arquivos.filter(a => re.test(semData(a.nome)));
+  const daObra = c.filter(a => a.pastas.some(p => normA(p) === obraN));
+  c = daObra.length ? daObra : c.filter(a => !a.pastas.some(p => obrasConhecidas.has(normA(p))));   // nunca de outra obra
+  const pal = normA(n.fornecedor).split(/[^A-Z0-9]+/).filter(p => p.length >= 3);
+  if (c.length > 1 && pal.length) { const f = c.filter(a => pal.some(p => normA(a.nome).includes(p))); if (f.length) c = f; }
+  const naoBoleto = c.filter(a => !/BOLETO/.test(normA(a.nome)));
+  if (naoBoleto.length) c = naoBoleto;
+  if (c.length > 1) { const t = /RECIBO/i.test(n.tipoDoc || '') ? 'RECIBO' : 'NF'; const f = c.filter(a => new RegExp(`\\b${t}\\b`).test(normA(a.nome))); if (f.length) c = f; }
+  if (c.length > 1 && envioData) {
+    const [y, m, d] = envioData.split('-'); const tag = `${d}-${m}-${y.slice(2)}`;
+    const l = c.filter(a => a.pastas.includes(tag)); if (l.length) c = l;
+  }
+  if (c.length > 1) { const orig = c.filter(a => !/\(\s*c[oó]pia|\(\d+\)\.pdf$/i.test(a.nome)); if (orig.length) c = orig; }
+  if (!c.length) return { erro: 'PDF não encontrado' };
+  if (c.length > 1) return { erro: 'mais de um PDF: ' + c.slice(0, 3).map(a => a.nome).join(', ') };
+  return { arq: c[0] };
+}
+
+function arquivoParaB64(file) {
+  return new Promise((ok, erro) => {
+    const r = new FileReader();
+    r.onload = () => ok(String(r.result).split(',')[1] || '');
+    r.onerror = () => erro(r.error);
+    r.readAsDataURL(file);
+  });
+}
+async function subirAnexo(nfId, file) {
+  if (file.size > 6.5 * 1024 * 1024) throw new Error('PDF maior que 6,5 MB');
+  const b64 = await arquivoParaB64(file);
+  const { error } = await sb.from('anexos').upsert({ nf_id: nfId, nome: file.name, tamanho: file.size, b64, enviado_em: new Date().toISOString() });
+  if (error) throw new Error(error.message);
+  anexosIds.add(nfId);
+}
+
+// botão "📎 Anexar NFs pendentes": acha e envia sozinho os PDFs das cobranças em "Precisa resolver"
+async function anexarPendentes() {
+  if (!window.showDirectoryPicker) { alert('Este navegador não permite escolher pastas. Use o Chrome ou o Edge no computador.'); return; }
+  await carregarAnexos();
+  const lista = [];
+  for (const e of envios) for (const n of e.nfs || []) if (pendenteNF(n) && !anexosIds.has(n.id)) lista.push({ n, envio: e });
+  // tira PDFs de cobranças que não estão mais pendentes (o engenheiro já não vê)
+  const pendentes = new Set(allNFs().filter(pendenteNF).map(n => n.id));
+  const sobrando = [...anexosIds].filter(id => !pendentes.has(id));
+  if (sobrando.length) { const { error } = await sb.from('anexos').delete().in('nf_id', sobrando); if (!error) sobrando.forEach(id => anexosIds.delete(id)); }
+  if (!lista.length) { renderEnvios(); alert('✅ Todas as cobranças em "Precisa resolver" já têm o PDF anexado.'); return; }
+  if (!confirm(`${lista.length} cobrança(s) em "Precisa resolver" ainda sem PDF.\n\nNa próxima janela, escolha a pasta "Semanas" (com todas as semanas) — ou a pasta de uma semana. O Controle acha o PDF de cada NF pelo nome e anexa.`)) return;
+  let dir;
+  try { dir = await showDirectoryPicker({ id: 'mph-semanas', mode: 'read' }); }
+  catch (e) { if (e.name !== 'AbortError') alert(e.message); return; }
+  statusNuvem('salvando');
+  const arquivos = await listarPDFsRec(dir);
+  const obrasConhecidas = new Set(listaObras().map(normA));
+  const ok = [], falhas = [];
+  for (const { n, envio } of lista) {
+    const desc = `${n.tipoDoc || 'NF'} ${n.numDoc} — ${n.fornecedor} (${n.obra})`;
+    const r = acharPDFdaNF(arquivos, n, envio.data, obrasConhecidas);
+    if (r.erro) { falhas.push(`${desc}: ${r.erro}`); continue; }
+    try { await subirAnexo(n.id, await r.arq.handle.getFile()); ok.push(desc); }
+    catch (e) { falhas.push(`${desc}: ${e.message}`); }
+  }
+  statusNuvem('ok');
+  renderEnvios();
+  alert(`📎 ${ok.length} PDF(s) anexado(s).` + (falhas.length ? `\n\nNão anexados (use o 📎 na linha para escolher o PDF à mão):\n• ${falhas.slice(0, 15).join('\n• ')}${falhas.length > 15 ? '\n…' : ''}` : ''));
+}
+
+// 📎 na linha: escolher o PDF à mão
+let anexoAlvo = null;
+function anexarManual(nfId) { anexoAlvo = nfId; const f = document.getElementById('fAnexoManual'); f.value = ''; f.click(); }
+async function anexoManualEscolhido(input) {
+  const file = input.files && input.files[0];
+  if (!file || !anexoAlvo) return;
+  try { statusNuvem('salvando'); await subirAnexo(anexoAlvo, file); statusNuvem('ok'); renderEnvios(); }
+  catch (e) { statusNuvem('ok'); alert('Não consegui anexar: ' + e.message); }
+  anexoAlvo = null;
+}
 
 // ============================================================
 // INIT
