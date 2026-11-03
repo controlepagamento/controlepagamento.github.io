@@ -9,7 +9,7 @@
 <link rel="icon" href="logo.png">
 <script>
 // tema salvo neste aparelho (ou o do sistema), aplicado antes de desenhar a página
-(function(){var t='dark';try{t=localStorage.getItem('cp_tema')||(matchMedia('(prefers-color-scheme: light)').matches?'light':'dark');}catch(e){}document.documentElement.setAttribute('data-theme',t);})();
+(function(){var t='dark';try{t=localStorage.getItem('cp_tema')||'light';}catch(e){}document.documentElement.setAttribute('data-theme',t);})();
 function alternarTema(){
   var t=document.documentElement.getAttribute('data-theme')==='light'?'dark':'light';
   document.documentElement.setAttribute('data-theme',t);
@@ -350,6 +350,68 @@ tr:has(+ .linha-extra:not([hidden])) td{border-bottom:none}
 .badge.vence{background:var(--amber-dim);color:var(--amber);border:1px solid rgba(245,158,11,0.35)}
 td.lote{white-space:nowrap;color:var(--text-muted);font-size:12px}
 .filtros select{max-width:100%}
+
+/* CONVERSA EM BALÕES */
+.enviado{font-size:12px;font-weight:600;padding:5px 10px;border-radius:7px;background:var(--amber-dim);color:var(--amber);white-space:nowrap}
+.btn-conv{position:relative;white-space:nowrap}
+.btn-conv.tem-resp{border-color:var(--green);color:var(--green)}
+.btn-conv .ponto{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--green);margin-left:2px;vertical-align:middle}
+.conv-box{padding:4px 0 6px;max-width:760px;margin-left:auto}
+.conv-msgs{display:flex;flex-direction:column;gap:6px;margin-bottom:8px}
+.bolha{max-width:82%;padding:7px 11px;border-radius:12px;font-size:13px;line-height:1.4}
+.bolha.eu{align-self:flex-end;background:var(--ui);color:var(--on-ui);border-bottom-right-radius:4px}
+.bolha.ele{align-self:flex-start;background:var(--bg-elevated);border:1px solid var(--border);border-bottom-left-radius:4px}
+.b-meta{font-size:10.5px;opacity:.7;margin-top:2px}
+.conv-txt{flex:1;min-width:200px;background:var(--bg-input);border:1px solid var(--border);border-radius:8px;padding:8px 10px;color:var(--text-primary);font-size:13px;font-family:inherit;outline:none;resize:vertical}
+@media (max-width:760px){
+  .conv-box{max-width:none}
+  .conv-txt{font-size:16px;min-width:0}
+  .linha-extra .bolha{text-align:left}
+}
+
+/* ===== LEITURA: fundo liso, painéis sólidos, mais contraste (substitui grade e vidro) ===== */
+:root,:root[data-theme="dark"]{
+  --bg-base:#121316;--bg-surface:#1b1c21;--bg-elevated:#23252b;--bg-input:#16171b;
+  --border:#2d3037;--border-hover:#41454e;
+  --text-primary:#f2f3f5;--text-muted:#b0b4bc;--text-dim:#80858f;
+  --topbar-bg:#17181c;--modal-bg:#1b1c21;
+  --vidro:#1b1c21;--vidro-brilho:none;--vidro-borda:#2d3037;--vidro-topo:transparent;
+  --sombra:0 1px 2px rgba(0,0,0,.35);--hover:rgba(255,255,255,.04);--th-bg:#202228;
+}
+:root[data-theme="light"]{
+  --bg-base:#f2f3f5;--bg-surface:#ffffff;--bg-elevated:#f5f6f8;--bg-input:#ffffff;
+  --border:#e2e4e8;--border-hover:#c5c9d0;
+  --text-primary:#111827;--text-muted:#4b5563;--text-dim:#8b919b;
+  --topbar-bg:#ffffff;--modal-bg:#ffffff;
+  --vidro:#ffffff;--vidro-brilho:none;--vidro-borda:#e2e4e8;--vidro-topo:transparent;
+  --sombra:0 1px 2px rgba(16,24,40,.06),0 1px 3px rgba(16,24,40,.05);--hover:#f5f8fc;--th-bg:#f7f8fa;
+}
+html,body{background:var(--bg-base) !important;background-image:none !important}
+body{-webkit-font-smoothing:antialiased;line-height:1.5}
+.fundo-formas{display:none !important}
+.topbar,.sum-card,.envio-card,.info-card,.login-card,.pin-card,.card,.secao,.obra-card,.modal,.conv,.resp-card{
+  -webkit-backdrop-filter:none !important;backdrop-filter:none !important;
+  background:var(--bg-surface) !important;background-image:none !important;
+  border:1px solid var(--border) !important;box-shadow:var(--sombra) !important;
+}
+.topbar{background:var(--topbar-bg) !important;border-width:0 0 1px 0 !important;box-shadow:none !important}
+.modal-bg{-webkit-backdrop-filter:none !important;backdrop-filter:none !important;background:rgba(0,0,0,.45)}
+.obra-card.ativa{border-color:var(--ui) !important;box-shadow:inset 0 0 0 1px var(--ui),var(--sombra) !important}
+.conv.tem-nova{border-left:3px solid var(--amber) !important}
+.dica{background:var(--bg-elevated) !important}
+/* tabelas: letra maior, cabeçalho destacado, linha ao passar o mouse */
+table{font-size:13.5px}
+th{background:var(--th-bg) !important;font-size:11px !important;color:var(--text-muted) !important;letter-spacing:.04em}
+td{padding-top:11px;padding-bottom:11px}
+tbody tr:hover > td{background:var(--hover)}
+.linha-extra:hover > td{background:transparent}
+.badge{font-size:11px}
+.sum-card .label,.card .rot{font-size:11px !important}
+.sum-card .sub,.card .sub,.logo-sub{font-size:12px !important}
+.chip{font-size:12px}
+.icon-btn{font-size:12.5px}
+input,select,textarea{color:var(--text-primary)}
+input::placeholder,textarea::placeholder{color:var(--text-dim)}
 </style>
 </head>
 <body>
@@ -535,20 +597,29 @@ function venceEm(i) {
 const aguardando = i => !precisaResolver(i) && !i.vinculado;
 const ordemPend = i => i.ocNegativada ? 0 : i.semOC ? 1 : 2;
 
-// ---------- RESPOSTAS (engenheiro → Gustavo) ----------
-const respostasDe = id => (dados.respostas || []).filter(r => r.nf_id === id);
+// ---------- CONVERSA (engenheiro ↔ Gustavo) ----------
+const porData = (a, b) => String(a.criado_em).localeCompare(String(b.criado_em));
+const respostasDe = id => (dados.respostas || []).filter(r => r.nf_id === id).sort(porData);
 const limparOC = v => String(v || '').replace(/^\s*o\.?\s*c\.?\s*(n[ºo°.]?)?\s*/i, '').trim();
 const quando = iso => { const d = new Date(iso); return isNaN(d) ? '' : d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) + ' ' + d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }); };
-const ROTULO = { oc: r => `OC ${esc(r.oc)}`, liberada: () => 'OC liberada', resolvido: () => 'Apropriação feita', comentario: () => 'Comentário' };
-function linhaResposta(r) {
-  const st = r.status === 'aplicada' ? '<span class="st ok">✓ Gustavo aplicou</span>'
-    : r.status === 'descartada' ? '<span class="st no">✕ Gustavo não aplicou</span>'
-    : '<span class="st wait">aguardando Gustavo</span>';
-  return `<div class="resp">
-    <span>📨 <b>${esc(String(r.engenheiro || '').split(' ')[0])}</b>: ${ROTULO[r.tipo] ? ROTULO[r.tipo](r) : ''}${r.texto ? ` — “${esc(r.texto)}”` : ''}</span>
-    <span class="quando">${quando(r.criado_em)}</span> ${st}
-    ${r.resposta_admin ? `<div class="resp-admin">💬 Gustavo: ${esc(r.resposta_admin)}</div>` : ''}
-  </div>`;
+const doGustavo = r => r.tipo === 'gustavo';
+// aguardando o Gustavo: OC / OC liberada / apropriação já enviada (não pode mandar de novo)
+const enviadoAguardando = (id, tipo) => (dados.respostas || []).find(r => r.nf_id === id && r.tipo === tipo && r.status === 'nova');
+
+function bolha(r) {
+  if (doGustavo(r)) return `<div class="bolha ele"><div class="b-txt">${esc(r.texto)}</div><div class="b-meta">Gustavo · ${quando(r.criado_em)}</div></div>`;
+  const conteudo = r.tipo === 'oc' ? `<b>OC ${esc(r.oc)}</b>` : r.tipo === 'liberada' ? '<b>✓ OC liberada</b>' : r.tipo === 'resolvido' ? '<b>✓ Já apropriei</b>' : '';
+  const st = r.status === 'nova' ? '<span title="Aguardando o Gustavo">🕓</span>' : r.status === 'descartada' ? '<span title="O Gustavo não aplicou">✕</span>' : '<span title="Visto / aplicado pelo Gustavo">✓✓</span>';
+  const antiga = r.resposta_admin ? `<div class="bolha ele"><div class="b-txt">${esc(r.resposta_admin)}</div><div class="b-meta">Gustavo</div></div>` : '';
+  return `<div class="bolha eu"><div class="b-txt">${conteudo}${conteudo && r.texto ? ' — ' : ''}${r.texto ? esc(r.texto) : ''}</div>
+    <div class="b-meta">${esc(String(r.engenheiro || '').split(' ')[0])} · ${quando(r.criado_em)} ${st}</div></div>${antiga}`;
+}
+// botão 💬 da cobrança: nº de mensagens e aviso quando a última é do Gustavo
+function botaoConversa(i) {
+  const msgs = respostasDe(i.id);
+  const ult = msgs[msgs.length - 1];
+  const nova = ult && (doGustavo(ult) || ult.resposta_admin);
+  return `<button class="btn sm btn-conv ${nova ? 'tem-resp' : ''}" data-acao="abrir-conv" data-id="${esc(i.id)}" title="${nova ? 'O Gustavo respondeu' : 'Conversa com o Gustavo sobre esta cobrança'}">💬${msgs.length ? ' ' + msgs.length : ''}${nova ? ' <span class="ponto"></span>' : ''}</button>`;
 }
 
 // o que o engenheiro pode fazer em cada lançamento
@@ -556,11 +627,17 @@ function acoes(i) {
   const id = esc(i.id);
   let h = '';
   if (i.temAnexo) h += `<button class="btn sm" data-acao="ver-nf" data-id="${id}" title="Abrir o PDF da NF">📄 NF</button>`;
-  if (i.semOC) h += `<div class="acao-oc"><input class="oc-input" data-id="${id}" inputmode="numeric" placeholder="Nº da OC" autocomplete="off">
+  if (i.semOC) {
+    const env = enviadoAguardando(i.id, 'oc');
+    h += env ? `<span class="enviado" title="Você já informou — aguardando o Gustavo">OC ${esc(env.oc)} · 🕓</span>`
+      : `<div class="acao-oc"><input class="oc-input" data-id="${id}" inputmode="numeric" placeholder="Nº da OC" autocomplete="off">
       <button class="btn sm primary" data-acao="oc" data-id="${id}">Enviar</button></div>`;
-  if (i.ocNegativada) h += `<button class="btn sm primary" data-acao="liberada" data-id="${id}">✓ OC liberada</button>`;
-  if (i.faltaApropriacao) h += `<button class="btn sm primary" data-acao="resolvido" data-id="${id}">✓ Já apropriei</button>`;
-  h += `<button class="btn sm" data-acao="abrir-coment" data-id="${id}" title="Deixar um comentário sobre esta cobrança">💬</button>`;
+  }
+  if (i.ocNegativada) h += enviadoAguardando(i.id, 'liberada') ? '<span class="enviado">✓ OC liberada · 🕓</span>'
+    : `<button class="btn sm primary" data-acao="liberada" data-id="${id}">✓ OC liberada</button>`;
+  if (i.faltaApropriacao) h += enviadoAguardando(i.id, 'resolvido') ? '<span class="enviado">✓ Apropriado · 🕓</span>'
+    : `<button class="btn sm primary" data-acao="resolvido" data-id="${id}">✓ Já apropriei</button>`;
+  h += botaoConversa(i);
   return `<div class="acoes-resp">${h}</div>`;
 }
 
@@ -568,8 +645,8 @@ function linha(i, comObra, comAcoes) {
   const venc = venceEm(i);
   const ret = i.retencao && i.retPct ? `<div class="det">bruto ${brl(i.valor)} · ret. ${esc(i.retPct)}%</div>` : '';
   const fase = i.fase ? ` <span class="badge ${i.fase === 'Azul' ? 'azul' : 'cinza'}">${esc(i.fase)}</span>` : '';
-  const resp = respostasDe(i.id);
-  const cols = 8;
+  const msgs = respostasDe(i.id);
+  const span = 8 + (comObra ? 1 : 0);
   return `<tr data-id="${esc(i.id)}">
     <td data-l="Situação"><div>${situacao(i)}${comAcoes ? prazo(i) : ''}</div></td>
     ${comObra ? `<td data-l="Obra"><div>${esc(i.obra)}${fase}</div></td>` : ''}
@@ -579,12 +656,14 @@ function linha(i, comObra, comAcoes) {
     <td data-l="Vencimento"><div>${data(i.vencimento)}${venc}</div></td>
     <td data-l="Valor" class="num"><div>${brl(liquido(i))}${ret}</div></td>
     <td data-l="Lote" class="lote">${data(i.envio)}</td>
-    ${comAcoes ? `<td data-l="Responder" class="col-acoes">${acoes(i)}</td>` : `<td data-l="" class="col-mini"><button class="btn sm" data-acao="abrir-coment" data-id="${esc(i.id)}" title="Deixar um comentário">💬</button></td>`}
+    ${comAcoes ? `<td data-l="Responder" class="col-acoes">${acoes(i)}</td>` : `<td data-l="" class="col-mini">${botaoConversa(i)}</td>`}
   </tr>
-  ${resp.length ? `<tr class="linha-extra"><td colspan="${cols + (comObra ? 1 : 0)}">${resp.slice(0, 4).map(linhaResposta).join('')}</td></tr>` : ''}
-  <tr class="linha-extra linha-coment" data-coment="${esc(i.id)}" hidden><td colspan="${cols + (comObra ? 1 : 0)}">
-    <div class="coment-box"><textarea class="coment-input" data-id="${esc(i.id)}" rows="2" maxlength="1000" placeholder="Escreva para o Gustavo sobre esta cobrança (ex.: ainda não recebi o material, valor errado...)"></textarea>
-    <button class="btn sm primary" data-acao="comentario" data-id="${esc(i.id)}">Enviar comentário</button></div>
+  <tr class="linha-extra linha-conv" data-conv="${esc(i.id)}" hidden><td colspan="${span}">
+    <div class="conv-box">
+      ${msgs.length ? `<div class="conv-msgs">${msgs.map(bolha).join('')}</div>` : '<div class="det" style="padding:2px 0 8px">Nenhuma mensagem ainda sobre esta cobrança.</div>'}
+      <div class="coment-box"><textarea class="conv-txt" data-id="${esc(i.id)}" rows="1" maxlength="1000" placeholder="Escreva para o Gustavo sobre esta cobrança…"></textarea>
+      <button class="btn sm primary" data-acao="comentario" data-id="${esc(i.id)}">Enviar</button></div>
+    </div>
   </td></tr>`;
 }
 
@@ -599,18 +678,18 @@ function tabela(titulo, lista, vazio, comObra, comAcoes, dica) {
   </div>`;
 }
 
-// recados gerais da obra (sem lançamento específico)
+// recados gerais da obra (sem cobrança específica), também em balões
 function secaoRecados(obra) {
   const obras = dados.obras || [];
-  const lista = (dados.respostas || []).filter(r => !r.nf_id && (!obra || r.obra === obra)).slice(0, 8);
+  const msgs = (dados.respostas || []).filter(r => !r.nf_id && (!obra || r.obra === obra)).sort(porData).slice(-12);
   const seletor = obra ? `<input type="hidden" id="recadoObra" value="${esc(obra)}">`
     : `<select id="recadoObra" class="sel-obra">${obras.map(o => `<option>${esc(o)}</option>`).join('')}</select>`;
   return `<div class="secao">
-    <div class="secao-cab"><h2>💬 Recado para o Gustavo</h2><span class="qtd">${obra ? esc(obra) : 'escolha a obra'}</span></div>
+    <div class="secao-cab"><h2>💬 Recados para o Gustavo</h2><span class="qtd">${obra ? esc(obra) : 'escolha a obra'}</span></div>
+    ${msgs.length ? `<div class="conv-msgs" style="padding:12px 18px 0">${msgs.map(r => (obra ? '' : `<div class="det" style="align-self:${doGustavo(r) ? 'flex-start' : 'flex-end'}">${esc(r.obra)}</div>`) + bolha(r)).join('')}</div>` : ''}
     <div class="recado-form">${seletor}
-      <textarea id="recadoTexto" rows="2" maxlength="1000" placeholder="Qualquer assunto da obra: NF que vai chegar, dúvida, aviso..."></textarea>
-      <button class="btn sm primary" data-acao="recado">Enviar recado</button></div>
-    ${lista.length ? `<div class="recado-lista">${lista.map(r => `<div class="recado-item"><span class="det">${esc(r.obra)}</span>${linhaResposta(r)}</div>`).join('')}</div>` : ''}
+      <textarea id="recadoTexto" rows="1" maxlength="1000" placeholder="Qualquer assunto da obra: NF que vai chegar, dúvida, aviso..."></textarea>
+      <button class="btn sm primary" data-acao="recado">Enviar</button></div>
   </div>`;
 }
 
@@ -618,8 +697,8 @@ function desenhar() {
   if (!dados) return;
   // guarda o que estava digitado (o redesenho não pode apagar)
   const digitado = {};
-  document.querySelectorAll('#listas .oc-input, #listas .coment-input, #recadoTexto').forEach(el => { if (el.value) digitado[(el.className || el.id) + '|' + (el.dataset.id || '')] = el.value; });
-  const abertos = [...document.querySelectorAll('#listas .linha-coment:not([hidden])')].map(tr => tr.dataset.coment);
+  document.querySelectorAll('#listas .oc-input, #listas .conv-txt, #recadoTexto').forEach(el => { if (el.value) digitado[(el.className || el.id) + '|' + (el.dataset.id || '')] = el.value; });
+  const abertos = [...document.querySelectorAll('#listas .linha-conv:not([hidden])')].map(tr => tr.dataset.conv);
 
   const busca = document.getElementById('busca').value.trim().toLowerCase();
   const obra = obraSel;
@@ -649,20 +728,20 @@ function desenhar() {
   const onde = (obra ? ' — ' + esc(obra) : '') + (loteAtual ? ' · lote ' + data(loteAtual) : '');
   document.getElementById('listas').innerHTML =
     tabela('⚠️ Precisa resolver' + onde, pend, obra ? 'Nada pendente nesta obra. 🎉' : 'Nada pendente nas suas obras. 🎉', !obra, true,
-      '<b>Responda aqui mesmo:</b> digite o nº da OC e aperte <b>Enter</b> — vai direto para o Gustavo e o cursor pula para a próxima. Use <b>✓ OC liberada</b> quando a negativação foi aprovada e <b>💬</b> para qualquer outra informação.') +
+      '<b>Responda aqui mesmo:</b> digite o nº da OC e aperte <b>Enter</b> — vai direto para o Gustavo e o cursor pula para a próxima. Use <b>✓ OC liberada</b> quando a negativação foi aprovada e <b>💬</b> para conversar com o Gustavo sobre a cobrança. Depois de enviada, a OC fica travada até o Gustavo aplicar ou descartar.') +
     tabela('⏳ Aguardando vínculo' + onde, aguard, 'Nada aguardando vínculo.', !obra, false) +
     tabela('✓ Vinculadas' + onde, vinc, obra ? 'Nenhuma NF vinculada nesta obra ainda.' : 'Nenhuma NF vinculada ainda.', !obra, false) +
     secaoRecados(obra);
 
   // devolve o que estava digitado e os comentários abertos
-  document.querySelectorAll('#listas .oc-input, #listas .coment-input, #recadoTexto').forEach(el => { const v = digitado[(el.className || el.id) + '|' + (el.dataset.id || '')]; if (v) el.value = v; });
-  abertos.forEach(id => { const tr = document.querySelector(`#listas .linha-coment[data-coment="${CSS.escape(id)}"]`); if (tr) tr.hidden = false; });
+  document.querySelectorAll('#listas .oc-input, #listas .conv-txt, #recadoTexto').forEach(el => { const v = digitado[(el.className || el.id) + '|' + (el.dataset.id || '')]; if (v) el.value = v; });
+  abertos.forEach(id => { const tr = document.querySelector(`#listas .linha-conv[data-conv="${CSS.escape(id)}"]`); if (tr) tr.hidden = false; });
 }
 
 // ---------- ENVIAR ----------
 const ERROS = { pin: 'Seu acesso mudou. Entre de novo com o PIN.', bloqueado: 'Muitas tentativas. Aguarde 15 minutos.',
   oc: 'Digite o número da OC.', texto: 'Escreva o comentário.', limite: 'Muitas respostas em pouco tempo. Aguarde um pouco.',
-  obra: 'Esta obra não está liberada para você.', lancamento: 'Este lançamento não existe mais. Clique em ↻ Atualizar.' };
+  obra: 'Esta obra não está liberada para você.', ja_informado: 'Você já enviou essa informação — aguarde o Gustavo.', lancamento: 'Este lançamento não existe mais. Clique em ↻ Atualizar.' };
 async function enviarResposta(nfId, tipo, oc, texto, obra) {
   const { data: r, error } = await sb.rpc('engenheiro_responder', { p_pin: pinAtual, p_nf_id: nfId || null, p_tipo: tipo, p_oc: oc || null, p_texto: texto || null, p_obra: obra || null });
   if (error) throw new Error('Não consegui enviar agora. Confira a internet e tente de novo.');
@@ -678,8 +757,8 @@ const itemPorId = id => (dados.itens || []).find(i => i.id === id);
 
 async function acaoClick(btn) {
   const acao = btn.dataset.acao, id = btn.dataset.id;
-  if (acao === 'abrir-coment') {
-    const tr = document.querySelector(`#listas .linha-coment[data-coment="${CSS.escape(id)}"]`);
+  if (acao === 'abrir-conv') {
+    const tr = document.querySelector(`#listas .linha-conv[data-conv="${CSS.escape(id)}"]`);
     if (tr) { tr.hidden = !tr.hidden; if (!tr.hidden) tr.querySelector('textarea').focus(); }
     return;
   }
@@ -694,7 +773,7 @@ async function acaoClick(btn) {
     const todos = [...document.querySelectorAll('#listas .oc-input')];
     proximo = (todos[todos.indexOf(inp) + 1] || {}).dataset?.id || null;
   } else if (acao === 'comentario') {
-    const ta = document.querySelector(`#listas .coment-input[data-id="${CSS.escape(id)}"]`);
+    const ta = document.querySelector(`#listas .conv-txt[data-id="${CSS.escape(id)}"]`);
     texto = (ta && ta.value || '').trim();
     if (!texto) { toast('Escreva o comentário.', true); ta && ta.focus(); return; }
   } else if (acao === 'recado') {
@@ -708,7 +787,7 @@ async function acaoClick(btn) {
   try {
     await enviarResposta(acao === 'recado' ? null : id, acao === 'recado' ? 'comentario' : acao, oc, texto, obra);
     if (acao === 'oc') { const inp = document.querySelector(`#listas .oc-input[data-id="${CSS.escape(id)}"]`); if (inp) inp.value = ''; }
-    if (acao === 'comentario') { const ta = document.querySelector(`#listas .coment-input[data-id="${CSS.escape(id)}"]`); if (ta) ta.value = ''; const tr = document.querySelector(`#listas .linha-coment[data-coment="${CSS.escape(id)}"]`); if (tr) tr.hidden = true; }
+    if (acao === 'comentario') { const ta = document.querySelector(`#listas .conv-txt[data-id="${CSS.escape(id)}"]`); if (ta) ta.value = ''; }   // a conversa continua aberta, já com a mensagem nova
     if (acao === 'recado') document.getElementById('recadoTexto').value = '';
     desenhar();
     toast(acao === 'oc' ? `✓ OC ${oc} enviada para o Gustavo` : '✓ Enviado para o Gustavo');
@@ -728,7 +807,7 @@ document.addEventListener('keydown', ev => {
     ev.preventDefault();
     const b = document.querySelector(`#listas [data-acao="oc"][data-id="${CSS.escape(ev.target.dataset.id)}"]`);
     if (b) acaoClick(b);
-  } else if (ev.target.matches && ev.target.matches('.coment-input, #recadoTexto') && (ev.ctrlKey || ev.metaKey)) {
+  } else if (ev.target.matches && ev.target.matches('.conv-txt, #recadoTexto') && !ev.shiftKey) {
     ev.preventDefault();
     const b = ev.target.id === 'recadoTexto' ? document.querySelector('[data-acao="recado"]')
       : document.querySelector(`#listas [data-acao="comentario"][data-id="${CSS.escape(ev.target.dataset.id)}"]`);
