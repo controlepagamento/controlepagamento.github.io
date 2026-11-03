@@ -3618,8 +3618,28 @@ async function subirAnexo(nfId, file) {
 }
 
 // botão "📎 Anexar NFs pendentes": acha e envia sozinho os PDFs das cobranças em "Precisa resolver"
+// pasta "Semanas" lembrada neste computador: das próximas vezes é só clicar em "Permitir"
+async function pastaSemanas() {
+  let dir = await idbGet('semanas');
+  if (dir) {
+    try {
+      let p = await dir.queryPermission({ mode: 'read' });
+      if (p !== 'granted') p = await dir.requestPermission({ mode: 'read' });
+      if (p === 'granted') return dir;
+    } catch (e) { /* pasta lembrada não existe mais: escolhe de novo */ }
+  }
+  alert('Escolha a pasta "Semanas" (a que tem todas as semanas dentro).\nO Controle vai lembrar dela neste computador.');
+  dir = await showDirectoryPicker({ id: 'mph-semanas', mode: 'read' });
+  await idbSet('semanas', dir);
+  return dir;
+}
+async function trocarPastaSemanas() { await idbSet('semanas', null); anexarPendentes(); }
+
 async function anexarPendentes() {
   if (!window.showDirectoryPicker) { alert('Este navegador não permite escolher pastas. Use o Chrome ou o Edge no computador.'); return; }
+  let dir;   // pede a pasta logo no clique (o navegador só permite logo depois de um clique)
+  try { dir = await pastaSemanas(); }
+  catch (e) { if (e.name !== 'AbortError') alert('Não consegui abrir a pasta: ' + e.message + '\nClique em 📎 Anexar NFs pendentes de novo.'); return; }
   await carregarAnexos();
   const lista = [];
   for (const e of envios) for (const n of e.nfs || []) if (pendenteNF(n) && !anexosIds.has(n.id)) lista.push({ n, envio: e });
@@ -3628,10 +3648,6 @@ async function anexarPendentes() {
   const sobrando = [...anexosIds].filter(id => !pendentes.has(id));
   if (sobrando.length) { const { error } = await sb.from('anexos').delete().in('nf_id', sobrando); if (!error) sobrando.forEach(id => anexosIds.delete(id)); }
   if (!lista.length) { renderEnvios(); alert('✅ Todas as cobranças em "Precisa resolver" já têm o PDF anexado.'); return; }
-  if (!confirm(`${lista.length} cobrança(s) em "Precisa resolver" ainda sem PDF.\n\nNa próxima janela, escolha a pasta "Semanas" (com todas as semanas) — ou a pasta de uma semana. O Controle acha o PDF de cada NF pelo nome e anexa.`)) return;
-  let dir;
-  try { dir = await showDirectoryPicker({ id: 'mph-semanas', mode: 'read' }); }
-  catch (e) { if (e.name !== 'AbortError') alert(e.message); return; }
   statusNuvem('salvando');
   const arquivos = await listarPDFsRec(dir);
   const obrasConhecidas = new Set(listaObras().map(normA));
@@ -3645,7 +3661,8 @@ async function anexarPendentes() {
   }
   statusNuvem('ok');
   renderEnvios();
-  alert(`📎 ${ok.length} PDF(s) anexado(s).` + (falhas.length ? `\n\nNão anexados (use o 📎 na linha para escolher o PDF à mão):\n• ${falhas.slice(0, 15).join('\n• ')}${falhas.length > 15 ? '\n…' : ''}` : ''));
+  if (!arquivos.length) { await idbSet('semanas', null); alert(`A pasta "${dir.name}" não tem nenhum PDF. Clique em 📎 Anexar NFs pendentes de novo e escolha a pasta "Semanas".`); return; }
+  alert(`📎 ${ok.length} PDF(s) anexado(s) da pasta "${dir.name}".` + (falhas.length ? `\n\nNão anexados (use o 📎 na linha para escolher o PDF à mão):\n• ${falhas.slice(0, 15).join('\n• ')}${falhas.length > 15 ? '\n…' : ''}` : ''));
 }
 
 // 📎 na linha: escolher o PDF à mão
