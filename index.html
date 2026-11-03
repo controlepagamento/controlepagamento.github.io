@@ -297,6 +297,50 @@ body{background:transparent !important}
   -webkit-mask-image:radial-gradient(ellipse 120% 100% at 50% 30%, #000 55%, transparent 100%);
   mask-image:radial-gradient(ellipse 120% 100% at 50% 30%, #000 55%, transparent 100%);
 }
+
+/* ===== RESPOSTAS DO ENGENHEIRO ===== */
+[hidden]{display:none !important}
+.btn.sm{padding:6px 11px;font-size:12.5px;border-radius:7px}
+.btn.sm.primary{padding:6px 12px;font-size:12.5px}
+.badge.aguard{background:var(--ui-dim);color:var(--text-muted);border:1px solid var(--border)}
+.dica{padding:10px 18px;font-size:12.5px;color:var(--text-muted);border-bottom:1px solid var(--border);background:var(--ui-dim)}
+.dica b{color:var(--text-primary)}
+td.col-acoes{min-width:280px}
+td.col-mini{width:1%;text-align:right}
+.acoes-resp{display:flex;gap:6px;flex-wrap:wrap;align-items:center;justify-content:flex-end}
+.acao-oc{display:flex;gap:6px}
+.oc-input{width:96px;background:var(--bg-input);border:1px solid var(--border);border-radius:7px;padding:6px 9px;color:var(--text-primary);font-size:13px;font-family:inherit;outline:none}
+.linha-extra td{padding-top:0;border-top:none}
+tr:has(+ .linha-extra:not([hidden])) td{border-bottom:none}
+.resp{font-size:12px;color:var(--text-muted);padding:3px 0;display:flex;gap:8px;flex-wrap:wrap;align-items:baseline}
+.resp b{color:var(--text-primary);font-weight:600}
+.resp .quando{font-size:11px;color:var(--text-dim)}
+.st{font-size:10.5px;font-weight:700;padding:1px 7px;border-radius:20px;white-space:nowrap}
+.st.wait{background:var(--amber-dim);color:var(--amber)}
+.st.ok{background:var(--green-dim);color:var(--green)}
+.st.no{background:var(--ui-dim);color:var(--text-muted)}
+.resp-admin{flex-basis:100%;color:var(--text-primary);font-size:12.5px;padding-left:20px}
+.coment-box,.recado-form{display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap}
+.coment-box textarea,.recado-form textarea{flex:1;min-width:220px;background:var(--bg-input);border:1px solid var(--border);border-radius:8px;padding:8px 10px;color:var(--text-primary);font-size:13px;font-family:inherit;outline:none;resize:vertical}
+.recado-form{padding:14px 18px}
+.sel-obra{background:var(--bg-input);border:1px solid var(--border);border-radius:8px;padding:8px 10px;color:var(--text-primary);font-size:13px;font-family:inherit}
+.recado-lista{padding:0 18px 12px}
+.recado-item{border-top:1px solid var(--border);padding:8px 0}
+.toast{position:fixed;left:50%;bottom:24px;transform:translate(-50%,20px);opacity:0;pointer-events:none;background:var(--ui);color:var(--on-ui);padding:10px 16px;border-radius:10px;font-size:13.5px;font-weight:600;box-shadow:0 10px 30px rgba(0,0,0,.3);transition:all .2s;z-index:900;max-width:calc(100vw - 32px)}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+.toast.erro{background:var(--accent);color:#fff}
+.resumo{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}
+@media (max-width:760px){
+  .linha-extra td{display:block}
+  .linha-extra td::before{display:none}
+  .linha-extra td > div,.linha-extra .resp{text-align:left;justify-content:flex-start}
+  td.col-mini{justify-content:flex-end}
+  td.col-acoes{min-width:0}
+  td.col-acoes::before{padding-top:8px}
+  .acoes-resp{justify-content:flex-end}
+  .oc-input{width:110px;font-size:16px}
+  .coment-box textarea,.recado-form textarea{font-size:16px;min-width:0;flex-basis:100%}
+}
 </style>
 </head>
 <body>
@@ -362,6 +406,7 @@ body{background:transparent !important}
     <div id="listas"></div>
   </div>
 </div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script>
 const cfg = window.MPH_CONFIG || {};
@@ -457,16 +502,48 @@ function situacao(i) {
   if (i.ocNegativada) return '<span class="badge oc-neg">OC Negativada</span>';
   if (i.semOC) return '<span class="badge sem-oc">Sem OC</span>';
   if (i.faltaApropriacao) return '<span class="badge falta-apr">Falta Apropriação</span>';
-  return '<span class="badge vinc">✓ Vinculada</span>';
+  if (i.vinculado) return '<span class="badge vinc">✓ Vinculada</span>';
+  return '<span class="badge aguard">⏳ Aguardando</span>';
 }
 const precisaResolver = i => i.ocNegativada || i.semOC || i.faltaApropriacao;
+const aguardando = i => !precisaResolver(i) && !i.vinculado;
 const ordemPend = i => i.ocNegativada ? 0 : i.semOC ? 1 : 2;
 
-function linha(i, comObra) {
-  const venc = i.vencimento && i.vencimento < hoje() && precisaResolver(i) ? ' <span class="badge vencido">vencido</span>' : '';
+// ---------- RESPOSTAS (engenheiro → Gustavo) ----------
+const respostasDe = id => (dados.respostas || []).filter(r => r.nf_id === id);
+const limparOC = v => String(v || '').replace(/^\s*o\.?\s*c\.?\s*(n[ºo°.]?)?\s*/i, '').trim();
+const quando = iso => { const d = new Date(iso); return isNaN(d) ? '' : d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) + ' ' + d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }); };
+const ROTULO = { oc: r => `OC ${esc(r.oc)}`, liberada: () => 'OC liberada', resolvido: () => 'Apropriação feita', comentario: () => 'Comentário' };
+function linhaResposta(r) {
+  const st = r.status === 'aplicada' ? '<span class="st ok">✓ Gustavo aplicou</span>'
+    : r.status === 'descartada' ? '<span class="st no">✕ Gustavo não aplicou</span>'
+    : '<span class="st wait">aguardando Gustavo</span>';
+  return `<div class="resp">
+    <span>📨 <b>${esc(String(r.engenheiro || '').split(' ')[0])}</b>: ${ROTULO[r.tipo] ? ROTULO[r.tipo](r) : ''}${r.texto ? ` — “${esc(r.texto)}”` : ''}</span>
+    <span class="quando">${quando(r.criado_em)}</span> ${st}
+    ${r.resposta_admin ? `<div class="resp-admin">💬 Gustavo: ${esc(r.resposta_admin)}</div>` : ''}
+  </div>`;
+}
+
+// o que o engenheiro pode fazer em cada lançamento
+function acoes(i) {
+  const id = esc(i.id);
+  let h = '';
+  if (i.semOC) h += `<div class="acao-oc"><input class="oc-input" data-id="${id}" inputmode="numeric" placeholder="Nº da OC" autocomplete="off">
+      <button class="btn sm primary" data-acao="oc" data-id="${id}">Enviar</button></div>`;
+  if (i.ocNegativada) h += `<button class="btn sm primary" data-acao="liberada" data-id="${id}">✓ OC liberada</button>`;
+  if (i.faltaApropriacao) h += `<button class="btn sm primary" data-acao="resolvido" data-id="${id}">✓ Já apropriei</button>`;
+  h += `<button class="btn sm" data-acao="abrir-coment" data-id="${id}" title="Deixar um comentário sobre esta cobrança">💬</button>`;
+  return `<div class="acoes-resp">${h}</div>`;
+}
+
+function linha(i, comObra, comAcoes) {
+  const venc = i.vencimento && i.vencimento < hoje() && !i.vinculado ? ' <span class="badge vencido">vencido</span>' : '';
   const ret = i.retencao && i.retPct ? `<div class="det">bruto ${brl(i.valor)} · ret. ${esc(i.retPct)}%</div>` : '';
   const fase = i.fase ? ` <span class="badge ${i.fase === 'Azul' ? 'azul' : 'cinza'}">${esc(i.fase)}</span>` : '';
-  return `<tr>
+  const resp = respostasDe(i.id);
+  const cols = 7;
+  return `<tr data-id="${esc(i.id)}">
     <td data-l="Situação">${situacao(i)}</td>
     ${comObra ? `<td data-l="Obra"><div>${esc(i.obra)}${fase}</div></td>` : ''}
     <td data-l="Fornecedor"><div>${esc(i.fornecedor)}${comObra ? '' : fase}</div></td>
@@ -474,22 +551,48 @@ function linha(i, comObra) {
     <td data-l="Documento"><div>${esc(i.tipoDoc || 'NF')} ${esc(i.numDoc || '')}</div></td>
     <td data-l="Vencimento"><div>${data(i.vencimento)}${venc}</div></td>
     <td data-l="Valor" class="num"><div>${brl(liquido(i))}${ret}</div></td>
-    <td data-l="Envio">${data(i.envio)}</td>
-  </tr>`;
+    ${comAcoes ? `<td data-l="Responder" class="col-acoes">${acoes(i)}</td>` : `<td data-l="" class="col-mini"><button class="btn sm" data-acao="abrir-coment" data-id="${esc(i.id)}" title="Deixar um comentário">💬</button></td>`}
+  </tr>
+  ${resp.length ? `<tr class="linha-extra"><td colspan="${cols + (comObra ? 1 : 0)}">${resp.slice(0, 4).map(linhaResposta).join('')}</td></tr>` : ''}
+  <tr class="linha-extra linha-coment" data-coment="${esc(i.id)}" hidden><td colspan="${cols + (comObra ? 1 : 0)}">
+    <div class="coment-box"><textarea class="coment-input" data-id="${esc(i.id)}" rows="2" maxlength="1000" placeholder="Escreva para o Gustavo sobre esta cobrança (ex.: ainda não recebi o material, valor errado...)"></textarea>
+    <button class="btn sm primary" data-acao="comentario" data-id="${esc(i.id)}">Enviar comentário</button></div>
+  </td></tr>`;
 }
 
-function tabela(titulo, lista, vazio, comObra) {
+function tabela(titulo, lista, vazio, comObra, comAcoes, dica) {
   const total = lista.reduce((s, i) => s + liquido(i), 0);
   return `<div class="secao">
     <div class="secao-cab"><h2>${titulo}</h2><span class="qtd">${lista.length} lançamento(s)</span><span class="tot">${brl(total)}</span></div>
+    ${dica && lista.length ? `<div class="dica">${dica}</div>` : ''}
     ${lista.length ? `<table>
-      <thead><tr><th>Situação</th>${comObra ? '<th>Obra</th>' : ''}<th>Fornecedor</th><th>OC</th><th>Documento</th><th>Vencimento</th><th class="num">Valor</th><th>Envio</th></tr></thead>
-      <tbody>${lista.map(i => linha(i, comObra)).join('')}</tbody></table>` : `<div class="vazio">${vazio}</div>`}
+      <thead><tr><th>Situação</th>${comObra ? '<th>Obra</th>' : ''}<th>Fornecedor</th><th>OC</th><th>Documento</th><th>Vencimento</th><th class="num">Valor</th><th>${comAcoes ? 'Responder ao Gustavo' : ''}</th></tr></thead>
+      <tbody>${lista.map(i => linha(i, comObra, comAcoes)).join('')}</tbody></table>` : `<div class="vazio">${vazio}</div>`}
+  </div>`;
+}
+
+// recados gerais da obra (sem lançamento específico)
+function secaoRecados(obra) {
+  const obras = dados.obras || [];
+  const lista = (dados.respostas || []).filter(r => !r.nf_id && (!obra || r.obra === obra)).slice(0, 8);
+  const seletor = obra ? `<input type="hidden" id="recadoObra" value="${esc(obra)}">`
+    : `<select id="recadoObra" class="sel-obra">${obras.map(o => `<option>${esc(o)}</option>`).join('')}</select>`;
+  return `<div class="secao">
+    <div class="secao-cab"><h2>💬 Recado para o Gustavo</h2><span class="qtd">${obra ? esc(obra) : 'escolha a obra'}</span></div>
+    <div class="recado-form">${seletor}
+      <textarea id="recadoTexto" rows="2" maxlength="1000" placeholder="Qualquer assunto da obra: NF que vai chegar, dúvida, aviso..."></textarea>
+      <button class="btn sm primary" data-acao="recado">Enviar recado</button></div>
+    ${lista.length ? `<div class="recado-lista">${lista.map(r => `<div class="recado-item"><span class="det">${esc(r.obra)}</span>${linhaResposta(r)}</div>`).join('')}</div>` : ''}
   </div>`;
 }
 
 function desenhar() {
   if (!dados) return;
+  // guarda o que estava digitado (o redesenho não pode apagar)
+  const digitado = {};
+  document.querySelectorAll('#listas .oc-input, #listas .coment-input, #recadoTexto').forEach(el => { if (el.value) digitado[(el.className || el.id) + '|' + (el.dataset.id || '')] = el.value; });
+  const abertos = [...document.querySelectorAll('#listas .linha-coment:not([hidden])')].map(tr => tr.dataset.coment);
+
   const busca = document.getElementById('busca').value.trim().toLowerCase();
   const obra = obraSel;
   desenharObras();
@@ -497,18 +600,103 @@ function desenhar() {
     (!obra || i.obra === obra) &&
     (!busca || `${i.fornecedor} ${i.numDoc} ${i.oc} ${i.obra}`.toLowerCase().includes(busca)));
   const pend = itens.filter(precisaResolver).sort((a, b) => ordemPend(a) - ordemPend(b) || String(a.vencimento).localeCompare(String(b.vencimento)));
+  const aguard = itens.filter(aguardando).sort((a, b) => String(a.vencimento).localeCompare(String(b.vencimento)));
   const vinc = itens.filter(i => !precisaResolver(i) && i.vinculado);
   const vencidas = pend.filter(i => i.vencimento && i.vencimento < hoje());
   const soma = l => brl(l.reduce((s, i) => s + liquido(i), 0));
   document.getElementById('resumo').innerHTML = `
     <div class="card amber"><div class="rot">Precisa resolver</div><div class="val">${pend.length}</div><div class="sub">${soma(pend)}</div></div>
     <div class="card red"><div class="rot">Pendentes já vencidos</div><div class="val">${vencidas.length}</div><div class="sub">${soma(vencidas)}</div></div>
+    <div class="card"><div class="rot">Aguardando vínculo</div><div class="val">${aguard.length}</div><div class="sub">${soma(aguard)}</div></div>
     <div class="card green"><div class="rot">Vinculadas</div><div class="val">${vinc.length}</div><div class="sub">${soma(vinc)}</div></div>`;
   const onde = obra ? ' — ' + esc(obra) : '';
   document.getElementById('listas').innerHTML =
-    tabela('⚠️ Precisa resolver' + onde, pend, obra ? 'Nada pendente nesta obra.' : 'Nada pendente nas suas obras.', !obra) +
-    tabela('✓ Vinculadas' + onde, vinc, obra ? 'Nenhuma NF vinculada nesta obra ainda.' : 'Nenhuma NF vinculada ainda.', !obra);
+    tabela('⚠️ Precisa resolver' + onde, pend, obra ? 'Nada pendente nesta obra. 🎉' : 'Nada pendente nas suas obras. 🎉', !obra, true,
+      '<b>Responda aqui mesmo:</b> digite o nº da OC e aperte <b>Enter</b> — vai direto para o Gustavo e o cursor pula para a próxima. Use <b>✓ OC liberada</b> quando a negativação foi aprovada e <b>💬</b> para qualquer outra informação.') +
+    tabela('⏳ Aguardando vínculo' + onde, aguard, 'Nada aguardando vínculo.', !obra, false) +
+    tabela('✓ Vinculadas' + onde, vinc, obra ? 'Nenhuma NF vinculada nesta obra ainda.' : 'Nenhuma NF vinculada ainda.', !obra, false) +
+    secaoRecados(obra);
+
+  // devolve o que estava digitado e os comentários abertos
+  document.querySelectorAll('#listas .oc-input, #listas .coment-input, #recadoTexto').forEach(el => { const v = digitado[(el.className || el.id) + '|' + (el.dataset.id || '')]; if (v) el.value = v; });
+  abertos.forEach(id => { const tr = document.querySelector(`#listas .linha-coment[data-coment="${CSS.escape(id)}"]`); if (tr) tr.hidden = false; });
 }
+
+// ---------- ENVIAR ----------
+const ERROS = { pin: 'Seu acesso mudou. Entre de novo com o PIN.', bloqueado: 'Muitas tentativas. Aguarde 15 minutos.',
+  oc: 'Digite o número da OC.', texto: 'Escreva o comentário.', limite: 'Muitas respostas em pouco tempo. Aguarde um pouco.',
+  obra: 'Esta obra não está liberada para você.', lancamento: 'Este lançamento não existe mais. Clique em ↻ Atualizar.' };
+async function enviarResposta(nfId, tipo, oc, texto, obra) {
+  const { data: r, error } = await sb.rpc('engenheiro_responder', { p_pin: pinAtual, p_nf_id: nfId || null, p_tipo: tipo, p_oc: oc || null, p_texto: texto || null, p_obra: obra || null });
+  if (error) throw new Error('Não consegui enviar agora. Confira a internet e tente de novo.');
+  if (r.erro) { if (r.erro === 'pin' || r.erro === 'bloqueado') sair(ERROS[r.erro]); throw new Error(ERROS[r.erro] || 'Não consegui enviar.'); }
+  dados.respostas = [{ id: r.id, nf_id: nfId || null, obra, tipo, oc: oc ? limparOC(oc) : null, texto: texto || null, status: 'nova', engenheiro: dados.nome, criado_em: new Date().toISOString() }, ...(dados.respostas || [])];
+}
+function toast(t, erro) {
+  const el = document.getElementById('toast');
+  el.textContent = t; el.className = 'toast show' + (erro ? ' erro' : '');
+  clearTimeout(el._t); el._t = setTimeout(() => { el.className = 'toast'; }, erro ? 4500 : 2200);
+}
+const itemPorId = id => (dados.itens || []).find(i => i.id === id);
+
+async function acaoClick(btn) {
+  const acao = btn.dataset.acao, id = btn.dataset.id;
+  if (acao === 'abrir-coment') {
+    const tr = document.querySelector(`#listas .linha-coment[data-coment="${CSS.escape(id)}"]`);
+    if (tr) { tr.hidden = !tr.hidden; if (!tr.hidden) tr.querySelector('textarea').focus(); }
+    return;
+  }
+  if (btn.disabled) return;
+  const it = id ? itemPorId(id) : null;
+  let oc = null, texto = null, obra = it ? it.obra : null, proximo = null;
+  if (acao === 'oc') {
+    const inp = document.querySelector(`#listas .oc-input[data-id="${CSS.escape(id)}"]`);
+    oc = limparOC(inp && inp.value);
+    if (!oc) { toast('Digite o número da OC.', true); inp && inp.focus(); return; }
+    const todos = [...document.querySelectorAll('#listas .oc-input')];
+    proximo = (todos[todos.indexOf(inp) + 1] || {}).dataset?.id || null;
+  } else if (acao === 'comentario') {
+    const ta = document.querySelector(`#listas .coment-input[data-id="${CSS.escape(id)}"]`);
+    texto = (ta && ta.value || '').trim();
+    if (!texto) { toast('Escreva o comentário.', true); ta && ta.focus(); return; }
+  } else if (acao === 'recado') {
+    texto = (document.getElementById('recadoTexto').value || '').trim();
+    obra = document.getElementById('recadoObra').value;
+    if (!texto) { toast('Escreva o recado.', true); document.getElementById('recadoTexto').focus(); return; }
+  } else if ((acao === 'liberada' || acao === 'resolvido') && !confirm(acao === 'liberada'
+      ? `Confirmar para o Gustavo que a OC ${it && it.oc ? it.oc + ' ' : ''}já foi liberada (negativação aprovada)?`
+      : 'Confirmar para o Gustavo que a apropriação já foi feita?')) return;
+  btn.disabled = true;
+  try {
+    await enviarResposta(acao === 'recado' ? null : id, acao === 'recado' ? 'comentario' : acao, oc, texto, obra);
+    if (acao === 'oc') { const inp = document.querySelector(`#listas .oc-input[data-id="${CSS.escape(id)}"]`); if (inp) inp.value = ''; }
+    if (acao === 'comentario') { const ta = document.querySelector(`#listas .coment-input[data-id="${CSS.escape(id)}"]`); if (ta) ta.value = ''; const tr = document.querySelector(`#listas .linha-coment[data-coment="${CSS.escape(id)}"]`); if (tr) tr.hidden = true; }
+    if (acao === 'recado') document.getElementById('recadoTexto').value = '';
+    desenhar();
+    toast(acao === 'oc' ? `✓ OC ${oc} enviada para o Gustavo` : '✓ Enviado para o Gustavo');
+    if (proximo) { const n = document.querySelector(`#listas .oc-input[data-id="${CSS.escape(proximo)}"]`); if (n) n.focus(); }
+  } catch (e) {
+    btn.disabled = false;
+    toast(e.message, true);
+  }
+}
+document.addEventListener('click', ev => {
+  const b = ev.target.closest('[data-acao]');
+  if (b && document.getElementById('painel').contains(b)) { ev.preventDefault(); acaoClick(b); }
+});
+document.addEventListener('keydown', ev => {
+  if (ev.key !== 'Enter') return;
+  if (ev.target.classList && ev.target.classList.contains('oc-input')) {
+    ev.preventDefault();
+    const b = document.querySelector(`#listas [data-acao="oc"][data-id="${CSS.escape(ev.target.dataset.id)}"]`);
+    if (b) acaoClick(b);
+  } else if (ev.target.matches && ev.target.matches('.coment-input, #recadoTexto') && (ev.ctrlKey || ev.metaKey)) {
+    ev.preventDefault();
+    const b = ev.target.id === 'recadoTexto' ? document.querySelector('[data-acao="recado"]')
+      : document.querySelector(`#listas [data-acao="comentario"][data-id="${CSS.escape(ev.target.dataset.id)}"]`);
+    if (b) acaoClick(b);
+  }
+});
 
 // quadro "Suas obras": um cartão por obra (clique para ver só ela) + "Todas"
 function desenharObras() {
@@ -519,12 +707,13 @@ function desenharObras() {
   const cartao = (o, titulo) => {
     const l = o ? itens.filter(i => i.obra === o) : itens;
     const pend = l.filter(precisaResolver), venc = pend.filter(i => i.vencimento && i.vencimento < hoje());
-    const vinc = l.filter(i => !precisaResolver(i) && i.vinculado);
+    const ag = l.filter(aguardando), vinc = l.filter(i => !precisaResolver(i) && i.vinculado);
     return `<button class="obra-card ${obraSel === o ? 'ativa' : ''}" data-o="${esc(o)}" onclick="escolherObra(this.dataset.o)">
       <span class="nome">${esc(titulo)}</span>
       <span class="linha-info">
         <span class="pill ${pend.length ? 'pend' : 'zero'}">${pend.length} para resolver</span>
         ${venc.length ? `<span class="pill venc">${venc.length} vencido(s)</span>` : ''}
+        ${ag.length ? `<span class="pill zero">${ag.length} aguardando</span>` : ''}
         <span class="pill ${vinc.length ? 'ok' : 'zero'}">${vinc.length} vinculada(s)</span>
       </span>
       ${pend.length ? `<span class="tot">Pendente: ${brl(pend.reduce((s, i) => s + liquido(i), 0))}</span>` : ''}
