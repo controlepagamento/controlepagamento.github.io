@@ -406,6 +406,24 @@ body{background:transparent !important}
   -webkit-mask-image:radial-gradient(ellipse 120% 100% at 50% 30%, #000 55%, transparent 100%);
   mask-image:radial-gradient(ellipse 120% 100% at 50% 30%, #000 55%, transparent 100%);
 }
+
+/* RESPOSTAS DOS ENGENHEIROS */
+.resp-filtros{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
+.resp-card{background:var(--bg-surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px;margin-bottom:10px;display:flex;flex-direction:column;gap:6px}
+.resp-card.tratada{opacity:.62}
+.resp-topo{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.resp-obra{font-weight:700;font-size:13.5px}
+.resp-quem{font-size:12px;color:var(--text-muted)}
+.resp-nf{font-size:13px}
+.resp-situ{color:var(--text-muted);font-size:12px}
+.resp-corpo{font-size:13px}
+.resp-oc{display:inline-block;margin-left:6px;font-weight:700;font-size:14px;padding:1px 9px;border-radius:7px;background:var(--ui-dim);border:1px solid var(--border)}
+.resp-texto{margin-top:4px;color:var(--text-primary);font-style:italic}
+.resp-aviso{font-size:12.5px;color:var(--amber)}
+.resp-minha{font-size:12.5px;color:var(--text-muted)}
+.resp-acoes{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:4px}
+.resp-acoes .resp-admin-input{flex:1;min-width:200px}
+.resp-dot{display:inline-block;margin-left:4px;font-size:10.5px;font-weight:700;padding:1px 6px;border-radius:10px;background:var(--amber-dim);color:var(--amber);cursor:pointer;white-space:nowrap}
 </style>
 </head>
 <body class="bloqueado">
@@ -452,6 +470,7 @@ body{background:transparent !important}
   <button class="tab active" id="tabEnvios" onclick="showTab('envios')">📦 Envios</button>
   <button class="tab" id="tabPastas" onclick="showTab('pastas')">🏗️ Obras <span class="tab-badge" id="pastasBadge" title="Obras sem caminho cadastrado"></span></button>
   <button class="tab" id="tabEng" onclick="showTab('eng')">👥 Usuários</button>
+  <button class="tab" id="tabResp" onclick="showTab('resp')">💬 Respostas <span class="tab-badge" id="respBadge" title="Respostas novas dos engenheiros"></span></button>
 </div>
 
 <div id="viewEnvios">
@@ -501,6 +520,7 @@ body{background:transparent !important}
 <!-- ABA: PASTAS DAS OBRAS -->
 <div id="viewPastas" style="display:none"></div>
 <div id="viewEng" style="display:none"></div>
+<div id="viewResp" style="display:none"></div>
 
 </div>
 
@@ -1773,7 +1793,7 @@ function renderEnvios() {
               <td class="check-cell" style="text-align:center">
                 <input type="checkbox" class="link-check" title="Marcar como já vinculado no sistema" ${n.vinculado?'checked':''} onchange="toggleVinculado('${envio.id}','${n.id}')">
               </td>
-              <td><strong>${highlight(n.numero||'—', srLower)}</strong></td>
+              <td><strong>${highlight(n.numero||'—', srLower)}</strong>${respNovasDe(n.id) ? ` <span class="resp-dot" onclick="irParaRespostas()" title="Resposta nova de engenheiro — clique para ver">💬 ${respNovasDe(n.id)}</span>` : ''}</td>
               <td>${ocBadge(n)||'—'}</td>
               <td>${highlight(n.obra||'—', srLower)}</td>
               <td>${faseBadge(n.fase)}</td>
@@ -2381,12 +2401,13 @@ function gerarPDFComFiltros(envioFiltroId, obraFiltro) {
 // ABAS
 // ============================================================
 function showTab(t) {
-  for (const [k, view, tab] of [['envios', 'viewEnvios', 'tabEnvios'], ['pastas', 'viewPastas', 'tabPastas'], ['eng', 'viewEng', 'tabEng']]) {
+  for (const [k, view, tab] of [['envios', 'viewEnvios', 'tabEnvios'], ['pastas', 'viewPastas', 'tabPastas'], ['eng', 'viewEng', 'tabEng'], ['resp', 'viewResp', 'tabResp']]) {
     document.getElementById(view).style.display = t === k ? '' : 'none';
     document.getElementById(tab).classList.toggle('active', t === k);
   }
   if (t === 'pastas') renderPastas();
   if (t === 'eng') renderEng();
+  if (t === 'resp') renderResp();
 }
 
 function escHtml(s) {
@@ -2843,7 +2864,7 @@ async function aposLogin() {
     irParaEntrada();
     return;
   }
-  try { await carregarNuvem(); }
+  try { await carregarNuvem(); await carregarRespostas(); }
   catch (e) { mostrarLogin('Não consegui ler os dados da nuvem: ' + e.message); return; }
   document.getElementById('loginBg').classList.remove('open');
   document.body.classList.remove('bloqueado');
@@ -2932,6 +2953,7 @@ document.addEventListener('visibilitychange', async () => {
   if (temAlteracaoPendente() || document.querySelector('.modal-bg.open')) return;
   try {
     await carregarNuvem();
+    await carregarRespostas();
     desenharTudo();
     if (document.getElementById('viewPastas').style.display !== 'none') renderPastas();
   } catch (e) { /* segue com o que está na tela */ }
@@ -3219,6 +3241,151 @@ function autoSalvarPasta() {
   const dir = await idbGet('pasta');
   try { if (dir && (await dir.queryPermission({ mode: 'readwrite' })) === 'granted') { pastaControle = dir; autoSalvarPasta(); } } catch (e) {}
 })();
+
+// ============================================================
+// RESPOSTAS DOS ENGENHEIROS (caixa de entrada)
+// ============================================================
+let respostas = [];
+let filtroResp = 'nova';
+const TIPO_RESP = { oc: 'Informou a OC', liberada: 'OC liberada (negativação aprovada)', resolvido: 'Apropriação feita', comentario: 'Comentário' };
+
+async function carregarRespostas() {
+  if (!sb) return;
+  const { data, error } = await sb.from('respostas').select('*').order('criado_em', { ascending: false }).limit(500);
+  if (error) { console.warn('respostas:', error.message); return; }
+  respostas = data || [];
+  atualizarBadgeResp();
+}
+const respNovas = () => respostas.filter(r => r.status === 'nova');
+const respNovasDe = id => respostas.filter(r => r.nf_id === id && r.status === 'nova').length;
+function atualizarBadgeResp() {
+  const b = document.getElementById('respBadge');
+  if (b) b.textContent = respNovas().length || '';
+}
+function acharNF(id) {
+  for (const e of envios) { const n = (e.nfs || []).find(x => x.id === id); if (n) return { envio: e, nf: n }; }
+  return null;
+}
+function irParaRespostas() { filtroResp = 'nova'; showTab('resp'); }
+const dataHora = iso => { const d = new Date(iso); return isNaN(d) ? '' : d.toLocaleDateString('pt-BR') + ' ' + d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }); };
+
+// o que o botão "Aplicar" vai fazer no lançamento
+function planoAplicar(r, a) {
+  if (r.tipo === 'comentario') return { rotulo: '✓ Marcar como lido', aviso: '' };
+  if (!a) return { rotulo: null, aviso: '⚠️ O lançamento não existe mais no Controle.' };
+  const n = a.nf;
+  if (r.tipo === 'oc') {
+    const troca = n.numero && String(n.numero).trim() !== String(r.oc).trim();
+    return { rotulo: `✓ Aplicar: OC ${r.oc}`, aviso: troca ? `⚠️ Hoje o lançamento está com a OC ${n.numero} — será trocada.` : '' };
+  }
+  if (r.tipo === 'liberada') return { rotulo: '✓ Aplicar: tirar "OC Negativada"', aviso: n.ocNegativada ? '' : 'Já está sem "OC Negativada".' };
+  if (r.tipo === 'resolvido') return { rotulo: '✓ Aplicar: tirar "Falta Apropriação"', aviso: n.faltaApropriacao ? '' : 'Já está sem "Falta Apropriação".' };
+  return { rotulo: null, aviso: '' };
+}
+
+function cartaoResposta(r) {
+  const a = r.nf_id ? acharNF(r.nf_id) : null;
+  const n = a && a.nf;
+  const plano = planoAplicar(r, a);
+  const conflito = r.tipo === 'oc' && r.status === 'nova' && respostas.some(x => x.id !== r.id && x.nf_id === r.nf_id && x.tipo === 'oc' && x.status === 'nova' && x.oc !== r.oc);
+  const situ = n ? [n.semOC && 'Sem OC', n.ocNegativada && 'OC Negativada', n.faltaApropriacao && 'Falta Apropriação', n.vinculado && 'Vinculada'].filter(Boolean).join(' · ') || 'sem pendência' : '';
+  const st = r.status === 'nova' ? '<span class="badge alerta">nova</span>' : r.status === 'aplicada' ? '<span class="badge pago">✓ aplicada</span>' : '<span class="badge sem-oc">descartada</span>';
+  const conteudo = r.tipo === 'oc' ? `<span class="resp-oc">OC ${escHtml(r.oc)}</span>` : r.tipo === 'liberada' ? '<span class="resp-oc">✓ OC liberada</span>' : r.tipo === 'resolvido' ? '<span class="resp-oc">✓ Já apropriou</span>' : '';
+  return `<div class="resp-card ${r.status !== 'nova' ? 'tratada' : ''}">
+    <div class="resp-topo">
+      <span class="resp-obra">${escHtml(r.obra)}</span>
+      <span class="resp-quem">👷 ${escHtml(r.engenheiro_nome)} · ${dataHora(r.criado_em)}</span>
+      <span style="margin-left:auto">${st}</span>
+    </div>
+    <div class="resp-nf">${r.nf_id ? `📄 ${escHtml(r.nf_resumo || '')}${n ? ` <span class="resp-situ">— agora: OC ${escHtml(n.numero || '—')} · ${escHtml(situ)} · venc. ${fmtDate(n.vencimento)}</span>` : ''}` : '💬 Recado geral da obra'}</div>
+    <div class="resp-corpo"><b>${TIPO_RESP[r.tipo] || r.tipo}</b> ${conteudo}${r.texto ? `<div class="resp-texto">“${escHtml(r.texto)}”</div>` : ''}</div>
+    ${conflito ? '<div class="resp-aviso">⚠️ Outra resposta para esta mesma cobrança informou uma OC diferente — confira antes de aplicar.</div>' : ''}
+    ${plano.aviso && r.status === 'nova' ? `<div class="resp-aviso">${plano.aviso}</div>` : ''}
+    ${r.resposta_admin ? `<div class="resp-minha">↩ Sua resposta: ${escHtml(r.resposta_admin)}</div>` : ''}
+    ${r.status === 'nova' ? `<div class="resp-acoes">
+      <input class="eng-input resp-admin-input" data-id="${r.id}" maxlength="500" placeholder="Responder ao engenheiro (opcional)">
+      ${plano.rotulo ? `<button class="btn sm primary" onclick="tratarResp(${r.id},'aplicada')">${escHtml(plano.rotulo)}</button>` : ''}
+      <button class="btn sm" onclick="tratarResp(${r.id},'descartada')" title="Não aplicar">Descartar</button>
+      <button class="btn sm" onclick="tratarResp(${r.id},null)" title="Só enviar a resposta, sem mudar nada">↩ Só responder</button>
+    </div>` : `<div class="resp-acoes"><button class="btn sm" onclick="tratarResp(${r.id},'nova')">↺ Voltar para novas</button></div>`}
+  </div>`;
+}
+
+function renderResp() {
+  const view = document.getElementById('viewResp');
+  if (!view) return;
+  const novas = respNovas();
+  const lista = filtroResp === 'nova' ? novas : respostas;
+  const aplicaveis = novas.filter(r => r.tipo !== 'comentario' && acharNF(r.nf_id) && !planoAplicar(r, acharNF(r.nf_id)).aviso.startsWith('⚠️')
+    && !(r.tipo === 'oc' && novas.some(x => x.id !== r.id && x.nf_id === r.nf_id && x.tipo === 'oc' && x.oc !== r.oc)));
+  view.innerHTML = `<div class="pastas-wrap">
+    <div class="info-card">
+      Aqui chegam as respostas dos engenheiros: o nº da OC de cobranças <strong>Sem OC</strong>, as <strong>OCs negativadas já liberadas</strong>, apropriações feitas e comentários.
+      <strong>Aplicar</strong> já preenche o lançamento (a OC entra e o "Sem OC" sai, por exemplo). O engenheiro vê na página dele se você aplicou e o que você respondeu.
+    </div>
+    <div class="resp-filtros">
+      <button class="chip ${filtroResp === 'nova' ? 'active' : ''}" onclick="filtroResp='nova';renderResp()">Novas (${novas.length})</button>
+      <button class="chip ${filtroResp === 'todas' ? 'active' : ''}" onclick="filtroResp='todas';renderResp()">Todas (${respostas.length})</button>
+      <button class="btn sm" onclick="recarregarRespostas()">↻ Atualizar</button>
+      ${aplicaveis.length > 1 ? `<button class="btn sm primary" style="margin-left:auto" onclick="aplicarTodas()">✓ Aplicar as ${aplicaveis.length} sem conflito</button>` : ''}
+    </div>
+    ${lista.length ? lista.map(cartaoResposta).join('') : `<div class="info-card" style="text-align:center">${filtroResp === 'nova' ? 'Nenhuma resposta nova. 🎉' : 'Nenhuma resposta ainda.'}</div>`}
+  </div>`;
+}
+async function recarregarRespostas() { await carregarRespostas(); renderResp(); renderEnvios(); }
+
+function aplicarNoLancamento(r) {
+  const a = acharNF(r.nf_id);
+  if (!a) return false;
+  if (r.tipo === 'oc') { a.nf.numero = r.oc; a.nf.semOC = false; }
+  else if (r.tipo === 'liberada') a.nf.ocNegativada = false;
+  else if (r.tipo === 'resolvido') a.nf.faltaApropriacao = false;
+  openCards.add(a.envio.id);
+  return true;
+}
+
+async function tratarResp(id, status) {
+  const r = respostas.find(x => x.id === id);
+  if (!r) return;
+  const inp = document.querySelector(`.resp-admin-input[data-id="${id}"]`);
+  const texto = inp ? inp.value.trim() : '';
+  if (status === null && !texto) { alert('Escreva a resposta para o engenheiro.'); inp && inp.focus(); return; }
+  if (status === 'aplicada' && r.tipo !== 'comentario') {
+    if (!aplicarNoLancamento(r)) { alert('Este lançamento não existe mais no Controle.'); return; }
+    persist();
+  }
+  const patch = { resposta_admin: texto || r.resposta_admin || null };
+  if (status) { patch.status = status; patch.tratado_em = status === 'nova' ? null : new Date().toISOString(); }
+  const { error } = await sb.from('respostas').update(patch).eq('id', id);
+  if (error) { alert('Não consegui salvar: ' + error.message); return; }
+  Object.assign(r, patch);
+  atualizarBadgeResp(); renderResp(); renderEnvios();
+}
+
+async function aplicarTodas() {
+  const novas = respNovas();
+  const lista = novas.filter(r => r.tipo !== 'comentario' && acharNF(r.nf_id) && !planoAplicar(r, acharNF(r.nf_id)).aviso.startsWith('⚠️')
+    && !(r.tipo === 'oc' && novas.some(x => x.id !== r.id && x.nf_id === r.nf_id && x.tipo === 'oc' && x.oc !== r.oc)));
+  if (!lista.length || !confirm(`Aplicar ${lista.length} resposta(s) nos lançamentos?\n\n` + lista.slice(0, 12).map(r => `• ${r.nf_resumo} → ${r.tipo === 'oc' ? 'OC ' + r.oc : TIPO_RESP[r.tipo]}`).join('\n') + (lista.length > 12 ? '\n…' : ''))) return;
+  lista.forEach(aplicarNoLancamento);
+  persist();
+  const agora = new Date().toISOString();
+  const { error } = await sb.from('respostas').update({ status: 'aplicada', tratado_em: agora }).in('id', lista.map(r => r.id));
+  if (error) { alert('Os lançamentos foram atualizados, mas não consegui marcar as respostas como aplicadas: ' + error.message); return; }
+  lista.forEach(r => { r.status = 'aplicada'; r.tratado_em = agora; });
+  atualizarBadgeResp(); renderResp(); renderEnvios();
+}
+
+// confere respostas novas de tempos em tempos (com o Controle aberto)
+setInterval(async () => {
+  if (!sb || document.visibilityState !== 'visible' || document.body.classList.contains('bloqueado')) return;
+  const antes = respNovas().length;
+  await carregarRespostas();
+  const v = document.getElementById('viewResp');
+  const digitando = v && [...v.querySelectorAll('.resp-admin-input')].some(i => i.value);
+  if (v && v.style.display !== 'none' && !digitando) renderResp();
+  if (respNovas().length !== antes) renderEnvios();
+}, 90000);
 
 // ============================================================
 // INIT
