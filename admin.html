@@ -1104,7 +1104,8 @@ async function listaOCsObra(obra, fase) {
 // procura o Num. OC na lista de OCs da obra numa fase; devolve a linha (pedido, fornecedor)
 async function procurarNaFase(it, fase) {
   let lista;
-  try { lista = await (cacheObras[fase.nome + '|' + it.obra] ||= listaOCsObra(it.obra, fase)); }
+  const nomeSis = it.obraSis || it.obra;   // "Nome no sistema" da aba Obras, se cadastrado
+  try { lista = await (cacheObras[fase.nome + '|' + nomeSis] ||= listaOCsObra(nomeSis, fase)); }
   catch (e) { if (/não encontrada na lista/.test(e.message)) e.podeOutraFase = true; throw e; }
   const { obraSistema, linhas } = lista;
   const n = nfNum(it.oc);
@@ -1129,13 +1130,15 @@ async function resolverPedido(it) {
     if (!e.podeOutraFase) throw e;
     // não achou na fase do Controle: confere a outra fase só para avisar (não troca sozinho)
     const outra = fase === FASES.AZUL ? FASES.CINZA : FASES.AZUL;
-    let achou = null;
-    try { achou = await procurarNaFase(it, outra); } catch (e2) { /* também não está na outra fase */ }
+    let achou = null, erroOutra = '';
+    try { achou = await procurarNaFase(it, outra); } catch (e2) { erroOutra = e2.message; }
     if (achou && (!it.fornecedor || fornecedorConfere(it.fornecedor, achou.fornecedor))) {
       const e3 = new Error(`OC ${it.oc} não está na Fase ${fase.nome}, mas existe na Fase ${outra.nome} (Pedido ${achou.pedido}, ${achou.fornecedor})`);
       e3.outraFase = outra.nome;
       throw e3;
     }
+    // mostra também o que aconteceu na outra fase, para facilitar achar o motivo
+    if (erroOutra) e.message += ` — e na Fase ${outra.nome}: ${erroOutra}`;
     throw e;
   }
 }
@@ -1258,7 +1261,7 @@ async function conferirItem(r) {
       r.acimaPendente = true;
       r.msg.push(`valor acima do pendente da OC (R$ ${paraBRL(pendente)}) — o sistema costuma recusar`);
     }
-    if (it.obra && r.clienteOC && !obraConfere(it.obra, r.clienteOC)) {
+    if (it.obra && r.clienteOC && !obraConfere(it.obraSis || it.obra, r.clienteOC)) {
       r.nivel = 'aviso';
       r.msg.push(`OC é do cliente "${r.clienteOC}", mas no Controle a obra é "${it.obra}" — confira o nº do Pedido`);
     }
@@ -1767,6 +1770,7 @@ function renderEnvios() {
           <span class="envio-total">${fmtVal(totalBruto)}</span>
         </div>
         <div class="envio-actions" onclick="event.stopPropagation()">
+          <button class="icon-btn edit" onclick="marcarSemOC('${envio.id}')" title="Marca como Sem OC todas as cobranças deste envio que estão sem nº de OC e sem situação">⚪ Sem OC nos vazios</button>
           <button class="icon-btn edit" onclick="vincularNoSistema('${envio.id}')" title="Gerar script para vincular no sistema e arquivar nas obras">⚡ Vincular</button>
           <button class="icon-btn edit" onclick="arquivarPendentes('${envio.id}')" title="Copiar para a pasta da obra as NFs já vinculadas que ainda não foram arquivadas">📁 Arquivar</button>
           <button class="icon-btn edit" onclick="openNovaNF('${envio.id}')" title="Adicionar NF">+ NF</button>
@@ -2452,6 +2456,12 @@ function obrasFixas() {
   return OBRAS_FIXAS;
 }
 let obrasCad = null;   // obras cadastradas (config "obras" na nuvem)
+let nomesSistema = {}; // nome de cada obra no novo.sistemamphengenharia.com (quando é diferente do Controle)
+function setNomeSistema(input) {
+  const o = input.dataset.obra, v = input.value.trim();
+  if (v) nomesSistema[o] = v; else delete nomesSistema[o];
+  salvarConfig('nomeSistema', nomesSistema);
+}
 function listaObras() {
   return [...new Set([...(obrasCad || obrasFixas()), ...allNFs().map(n => n.obra).filter(Boolean), ...Object.keys(pastas), ...Object.keys(semArquivo)]
     .map(obraCanonica))]
@@ -2564,6 +2574,7 @@ function renderPastas() {
   document.getElementById('viewPastas').innerHTML = `
   <div class="pastas-wrap">
     <div class="info-card">
+      <strong>Nome no sistema MpH:</strong> se a obra tem outro nome no novo.sistemamphengenharia.com (ex.: "Zeca e Renata" aqui e "Mauro e Renata" lá), escreva o nome de lá — o ⚡ Vincular passa a achar as OCs dela.<br>
       Se a mesma obra aparecer com dois nomes (ex.: "Hilton e Rosana" e "Estúdio PRG - Hilton e Rozana"), use <strong>É a mesma obra que…</strong> na linha do nome que deve sumir.<br>
       Cole o caminho completo da pasta <strong>18 - Notas Fiscais</strong> de cada obra. Toda obra precisa de caminho: NF, boletos e recibos vão sempre para a pasta.<br> Para copiar, abra a pasta no Explorer, clique na barra de endereço e copie.<br>
       Ao clicar em <strong>⚡ Vincular</strong>, a NF, os boletos e os recibos vinculados com sucesso são copiados para a subpasta do mês do envio (ex.: <span class="path">10 - OUTUBRO</span>), criada se ainda não existir.<br>
@@ -2579,11 +2590,12 @@ function renderPastas() {
     <div class="envio-card" style="overflow:visible">
       <div class="tbl-wrap">
       <table class="pastas-tbl">
-        <thead><tr><th>Obra (como está no Controle)</th><th>Lanç.</th><th style="width:100%">Caminho da pasta 18 - Notas Fiscais</th><th>Status</th><th title="Junte duas obras que são a mesma">É a mesma obra que…</th><th></th></tr></thead>
+        <thead><tr><th>Obra (como está no Controle)</th><th>Lanç.</th><th title="Como a obra aparece na lista de obras do novo.sistemamphengenharia.com. Só preencha se o nome for diferente do Controle.">Nome no sistema MpH</th><th style="width:100%">Caminho da pasta 18 - Notas Fiscais</th><th>Status</th><th title="Junte duas obras que são a mesma">É a mesma obra que…</th><th></th></tr></thead>
         <tbody>
         ${obras.map(o => `<tr>
           <td>${escHtml(o)}${apelidosDe(o).map(a => `<div style="font-size:10.5px;color:var(--text-muted);font-weight:400;margin-top:2px">também: ${escHtml(a)} <a href="#" onclick="removerApelido(this.dataset.a);return false" data-a="${escHtml(a)}" style="color:var(--text-dim)" title="Remover apelido">✕</a></div>`).join('')}</td>
           <td style="text-align:center;color:var(--text-muted)">${contarLancamentos(o)}</td>
+          <td><input class="pasta-input" style="min-width:200px;font-family:inherit" data-obra="${escHtml(o)}" value="${escHtml(nomesSistema[o] || '')}" onchange="setNomeSistema(this)" placeholder="igual ao Controle"></td>
           <td><input class="pasta-input" data-obra="${escHtml(o)}" value="${escHtml(pastas[o] || '')}" onchange="setPasta(this)" ${semArquivo[o] ? 'disabled style="opacity:.4" placeholder="Não arquiva — só vincula no sistema"' : 'placeholder="Cole aqui o caminho da pasta 18 - Notas Fiscais"'}></td>
           <td>${semArquivo[o] ? '<span class="badge sem-oc">só vincula</span>' : statusPasta(pastas[o])}</td>
           <td><select class="filter" style="padding:5px 8px;font-size:12px;max-width:220px" data-obra="${escHtml(o)}" onchange="unificarObra(this)">
@@ -2676,7 +2688,7 @@ function vincularNoSistema(envioId) {
     lista.push({
       id: n.id, oc, nf: String(n.numDoc).trim(), serie: 1, tipo: n.tipoDoc || 'NF',
       vencimento: n.vencimento, valor: Number(n.valor), fornecedor: n.fornecedor || '',
-      obra: n.obra || '', formaPag: n.formaPag || '', fase: n.fase || ''
+      obra: n.obra || '', obraSis: nomesSistema[n.obra] || '', formaPag: n.formaPag || '', fase: n.fase || ''
     });
   }
 
@@ -2897,6 +2909,7 @@ async function carregarNuvem() {
   const cfg = Object.fromEntries(r2.data.map(r => [r.chave, r.valor]));
   pastas = cfg.pastas || {};
   aliasObras = cfg.alias || {};
+  nomesSistema = cfg.nomeSistema || {};
   obrasCad = Array.isArray(cfg.obras) ? cfg.obras : null;
   importados = Array.isArray(cfg.importados) ? cfg.importados : [];
 }
@@ -3507,6 +3520,25 @@ async function anexoManualEscolhido(input) {
   try { statusNuvem('salvando'); await subirAnexo(anexoAlvo, file); statusNuvem('ok'); renderEnvios(); }
   catch (e) { statusNuvem('ok'); alert('Não consegui anexar: ' + e.message); }
   anexoAlvo = null;
+}
+
+// ⚪ Sem OC nos vazios: cobranças sem nº de OC, sem situação e não vinculadas viram "Sem OC"
+function marcarSemOC(envioId) {
+  const envio = envios.find(e => e.id === envioId);
+  if (!envio) return;
+  const comFiltro = filtroAtivo();
+  const alvo = (envio.nfs || []).filter(nfVisivel).filter(n =>
+    !n.vinculado && !String(n.numero || '').trim() && !n.semOC && !n.ocNegativada && !n.faltaApropriacao);
+  if (!alvo.length) { alert('Nenhuma cobrança deste envio está sem OC e sem situação.' + (comFiltro ? '\n(Há um filtro ativo: só as visíveis na tela contam.)' : '')); return; }
+  if (!confirm(`Marcar ${alvo.length} cobrança(s) como "Sem OC"?\n\n` +
+      alvo.slice(0, 15).map(n => `• ${n.tipoDoc || 'NF'} ${n.numDoc} — ${n.fornecedor} (${n.obra}) — ${fmtVal(n.valor)}`).join('\n') +
+      (alvo.length > 15 ? '\n…' : '') +
+      (comFiltro ? '\n\n🔍 Filtro ativo: só as cobranças visíveis na tela.' : '') +
+      '\n\nElas vão para "Precisa resolver" e o engenheiro de cada obra pode informar a OC pela página dele.')) return;
+  alvo.forEach(n => { n.semOC = true; });
+  openCards.add(envio.id);
+  persist();
+  alert(`✅ ${alvo.length} cobrança(s) marcada(s) como Sem OC.\n\nDica: use 📎 Anexar NFs pendentes para o engenheiro ver o PDF de cada uma.`);
 }
 
 // ============================================================
