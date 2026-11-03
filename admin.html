@@ -3054,11 +3054,10 @@ async function sairAdmin() {
 }
 
 async function trocarPinAdmin() {
-  const p1 = (prompt('Novo PIN de administrador (8 números ou mais):') || '').trim();
+  const p1 = prompt('Novo PIN de administrador (pelo menos 8 caracteres — letras, números ou símbolos; sem sequência):') || '';
   if (!p1) return;
-  if (!/^\d{8,12}$/.test(p1)) { alert('O PIN de administrador precisa ter de 8 a 12 números (o de 6 é dos engenheiros).'); return; }
-  if (/^(\d)\1+$/.test(p1) || '01234567890123'.includes(p1) || '98765432109876'.includes(p1)) { alert('PIN fácil demais. Escolha outro.'); return; }
-  if ((prompt('Repita o novo PIN:') || '').trim() !== p1) { alert('Os PINs não são iguais. Nada foi alterado.'); return; }
+  if (p1.length < 8 || !pinValido(p1)) { alert('O PIN de administrador precisa ter pelo menos 8 caracteres e não pode ser sequência (12345678, abcdefgh) nem tudo igual.'); return; }
+  if ((prompt('Repita o novo PIN:') || '') !== p1) { alert('Os PINs não são iguais. Nada foi alterado.'); return; }
   const { error } = await sb.auth.updateUser({ password: p1 });
   alert(error ? 'Não consegui trocar o PIN: ' + error.message : '✅ PIN de administrador trocado.');
 }
@@ -3160,7 +3159,7 @@ async function renderEng() {
   view.innerHTML = `
   <div class="pastas-wrap">
     <div class="info-card">
-      Cada usuário entra em <span class="path">${escHtml(link)}</span> com o próprio <strong>PIN de 6 dígitos</strong> e vê só as obras marcadas para ele:
+      Cada usuário entra em <span class="path">${escHtml(link)}</span> com o próprio <strong>PIN</strong> (pelo menos 5 caracteres — letras, números ou símbolos; sem sequência) e vê só as obras marcadas para ele:
       os lançamentos <strong>vinculados</strong> e os que <strong>precisam resolver</strong> (Sem OC, OC Negativada, Falta Apropriação). Ele só consulta, não altera nada.<br>
       Para dar acesso, clique em <strong>🔗 Convite</strong> e mande o link para o engenheiro (WhatsApp, e-mail): ele mesmo cria o PIN e o aparelho dele lembra.
       Se ele esquecer, mande um convite novo — ou use <strong>✏️ Definir</strong> e passe o PIN para ele. O link vale 7 dias e serve uma vez só.
@@ -3187,6 +3186,7 @@ async function renderEng() {
             ${e.temPin ? '<span class="badge pago">✓ definido</span>' : '<span class="badge alerta">sem PIN</span>'}
             <button class="btn sm" data-id="${e.id}" onclick="conviteEng(this.dataset.id)">🔗 Convite</button>
             <button class="btn sm" data-id="${e.id}" onclick="definirPinEng(this.dataset.id)">✏️ Definir</button>
+            ${e.temPin ? `<button class="btn sm" data-id="${e.id}" onclick="zerarPinEng(this.dataset.id)" title="Apaga o PIN atual: ele para de funcionar na hora">↺ Zerar</button>` : ''}
           </div></td>
           <td style="text-align:center"><input type="checkbox" class="link-check" data-id="${e.id}" ${e.ativo ? 'checked' : ''} onchange="ativarEng(this)"></td>
           <td><button class="btn sm outline-red" data-id="${e.id}" onclick="excluirEng(this.dataset.id)" title="Excluir">✕</button></td>
@@ -3248,7 +3248,23 @@ async function conviteEng(id) {
   if (error) { alert('Não consegui gerar o convite: ' + error.message); return; }
   const link = location.origin + location.pathname.replace(/[^/]*$/, '') + '?convite=' + token;
   const copiou = await copiarTexto(link);
-  prompt(`${copiou ? '✔ Link copiado. ' : ''}Mande para ${e ? e.nome : 'o engenheiro'} — ele abre, cria o PIN de 6 números e já entra.\nVale 7 dias e uma vez só.`, link);
+  prompt(`${copiou ? '✔ Link copiado. ' : ''}Mande para ${e ? e.nome : 'o engenheiro'} — ele abre, cria o PIN (pelo menos 5 caracteres) e já entra.\nVale 7 dias e uma vez só.`, link);
+}
+// PIN: pelo menos 5 caracteres (qualquer tipo); não pode ser sequência (12345, 54321, abcde) nem tudo igual (11111)
+function pinValido(p) {
+  const s = String(p || '').toLowerCase();
+  if (s.length < 5 || s.length > 64) return false;
+  let sobe = true, desce = true, igual = true;
+  for (let k = 1; k < s.length; k++) { const d = s.charCodeAt(k) - s.charCodeAt(k - 1); if (d !== 1) sobe = false; if (d !== -1) desce = false; if (d !== 0) igual = false; }
+  return !(sobe || desce || igual);
+}
+// apaga o PIN: o antigo para de funcionar na hora e a pessoa fica "sem PIN" até criar outro (convite) ou você definir
+async function zerarPinEng(id) {
+  const e = engenheiros.find(x => x.id === id);
+  if (!e || !confirm(`Zerar o PIN de ${e.nome}?\n\nO PIN atual para de funcionar na hora. Depois, mande um 🔗 Convite para ${e.nome.split(' ')[0]} criar o PIN dela/dele, ou use ✏️ Definir.`)) return;
+  if (!(await engUpdate(id, { pin_hash: null, convite_token: null, convite_expira: null }))) return;
+  await renderEng();
+  if (confirm(`PIN de ${e.nome} zerado.\n\nGerar agora o link de convite para criar o novo PIN?`)) await conviteEng(id);
 }
 async function gerarPinEng(id) {
   const e = engenheiros.find(x => x.id === id);
@@ -3258,9 +3274,9 @@ async function gerarPinEng(id) {
 }
 async function definirPinEng(id) {
   const e = engenheiros.find(x => x.id === id);
-  const pin = (prompt(`PIN de ${e ? e.nome : 'engenheiro'} (6 números):`) || '').trim();
+  const pin = prompt(`PIN de ${e ? e.nome : 'engenheiro'} — pelo menos 5 caracteres (letras, números ou símbolos), sem sequência como 12345 ou abcde:`) || '';
   if (!pin) return;
-  if (!/^\d{6}$/.test(pin)) { alert('O PIN precisa ter exatamente 6 números.'); return; }
+  if (!pinValido(pin)) { alert('O PIN precisa ter pelo menos 5 caracteres e não pode ser sequência (12345, abcde) nem tudo igual (11111).'); return; }
   await salvarPinEng(id, pin);
 }
 

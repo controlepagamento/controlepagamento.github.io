@@ -412,6 +412,14 @@ tbody tr:hover > td{background:var(--hover)}
 .icon-btn{font-size:12.5px}
 input,select,textarea{color:var(--text-primary)}
 input::placeholder,textarea::placeholder{color:var(--text-dim)}
+
+/* MODAL TROCAR PIN */
+.modal-fundo{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:16px;z-index:800}
+.modal-pin{max-width:360px;width:100%}
+.modal-pin .btn{width:100%}
+
+/* PIN livre: cabe senha maior */
+.pin-input{font-size:20px !important;letter-spacing:.18em !important;padding-left:14px !important}
 </style>
 </head>
 <body>
@@ -427,7 +435,7 @@ input::placeholder,textarea::placeholder{color:var(--text-dim)}
     <div class="logo-foto grande"><img src="logo.png" alt="" onerror="this.parentNode.classList.add('sem-foto')"><span>CP</span></div>
     <h1>Controle de Pagamento</h1>
     <p>Digite o seu PIN</p>
-    <input class="pin-input" id="pin" type="password" inputmode="numeric" autocomplete="current-password" maxlength="12" placeholder="••••••" oninput="this.value=this.value.replace(/\D/g,'')">
+    <input class="pin-input" id="pin" type="password" autocomplete="current-password" maxlength="64" placeholder="••••••">
     <label class="lembrar"><input type="checkbox" id="lembrar" checked> Lembrar neste aparelho</label>
     <button class="btn primary" id="btnEntrar" type="submit">Entrar</button>
     <div class="msg" id="msg"></div>
@@ -440,11 +448,11 @@ input::placeholder,textarea::placeholder{color:var(--text-dim)}
   <form class="pin-card" onsubmit="criarPin(event)">
     <div class="logo-foto grande"><img src="logo.png" alt="" onerror="this.parentNode.classList.add('sem-foto')"><span>CP</span></div>
     <h1 id="convOla">Crie seu PIN</h1>
-    <p>Escolha 6 números. É com eles que você vai entrar.</p>
+    <p>Crie seu PIN: pelo menos 5 caracteres (letras, números ou símbolos). Não vale sequência como 12345 ou abcde.</p>
     <div class="rot-campo">Novo PIN</div>
-    <input class="pin-input" id="novoPin" type="password" inputmode="numeric" autocomplete="new-password" maxlength="6" placeholder="••••••" oninput="this.value=this.value.replace(/\D/g,'')">
+    <input class="pin-input" id="novoPin" type="password" autocomplete="new-password" maxlength="64" placeholder="••••••">
     <div class="rot-campo">Repita o PIN</div>
-    <input class="pin-input" id="novoPin2" type="password" inputmode="numeric" autocomplete="new-password" maxlength="6" placeholder="••••••" oninput="this.value=this.value.replace(/\D/g,'')">
+    <input class="pin-input" id="novoPin2" type="password" autocomplete="new-password" maxlength="64" placeholder="••••••">
     <label class="lembrar"><input type="checkbox" id="lembrarConv" checked> Lembrar neste aparelho</label>
     <button class="btn primary" id="btnCriar" type="submit">Criar PIN e entrar</button>
     <div class="msg" id="msgConv"></div>
@@ -463,6 +471,7 @@ input::placeholder,textarea::placeholder{color:var(--text-dim)}
     </div>
     <div class="acoes">
       <button class="tema-btn" type="button" onclick="alternarTema()">☀️</button>
+      <button class="btn" onclick="abrirTrocaPin()" title="Trocar o seu PIN">🔑 PIN</button>
       <button class="btn" onclick="atualizar()">↻ Atualizar</button>
       <button class="btn" onclick="sair()">Sair</button>
     </div>
@@ -480,13 +489,38 @@ input::placeholder,textarea::placeholder{color:var(--text-dim)}
 </div>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
+<!-- TROCAR O PRÓPRIO PIN -->
+<div class="modal-fundo" id="modalPin" hidden onclick="if(event.target===this) fecharTrocaPin()">
+  <form class="pin-card modal-pin" onsubmit="trocarPin(event)">
+    <h1>Trocar meu PIN</h1>
+    <p>O novo PIN vale na hora. Guarde bem — ninguém consegue ver o seu PIN depois.</p>
+    <div class="rot-campo">PIN atual</div>
+    <input class="pin-input" id="pinAtualTroca" type="password" autocomplete="current-password" maxlength="64" placeholder="••••••">
+    <div class="rot-campo">Novo PIN</div>
+    <input class="pin-input" id="pinNovo1" type="password" autocomplete="new-password" maxlength="64" placeholder="••••••">
+    <div class="rot-campo">Repita o novo PIN</div>
+    <input class="pin-input" id="pinNovo2" type="password" autocomplete="new-password" maxlength="64" placeholder="••••••">
+    <button class="btn primary" id="btnTrocaPin" type="submit">Salvar novo PIN</button>
+    <button class="btn" type="button" onclick="fecharTrocaPin()">Cancelar</button>
+    <div class="msg" id="msgTroca"></div>
+  </form>
+</div>
+
 <script>
 const cfg = window.MPH_CONFIG || {};
 const sb = window.supabase && cfg.supabaseUrl && !/COLE/i.test(cfg.supabaseUrl + cfg.supabaseAnonKey)
   ? window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey)
   : null;
 const CHAVE_PIN = 'mph_pin';             // PIN lembrado neste aparelho (engenheiro)
-const PIN_ADMIN_MIN = 8;                 // PIN com 6 números = engenheiro; com 8 ou mais = administrador
+// PIN: pelo menos 5 caracteres (qualquer tipo); não pode ser sequência (12345, 54321, abcde) nem tudo igual (11111)
+function pinValido(p) {
+  const s = String(p || '').toLowerCase();
+  if (s.length < 5 || s.length > 64) return false;
+  let sobe = true, desce = true, igual = true;
+  for (let k = 1; k < s.length; k++) { const d = s.charCodeAt(k) - s.charCodeAt(k - 1); if (d !== 1) sobe = false; if (d !== -1) desce = false; if (d !== 0) igual = false; }
+  return !(sobe || desce || igual);
+}
+const REGRA_PIN = 'O PIN precisa ter pelo menos 5 caracteres (letras, números ou símbolos) e não pode ser sequência (12345, abcde) nem tudo igual (11111).';
 const lerPin = () => { try { return localStorage.getItem(CHAVE_PIN) || sessionStorage.getItem(CHAVE_PIN) || ''; } catch (e) { return ''; } };
 function guardarPin(pin, lembrar) {
   try {
@@ -532,14 +566,18 @@ async function entrarAdmin(pin) {
 async function entrar(ev) {
   if (ev) ev.preventDefault();
   if (ocupado) return;
-  const pin = document.getElementById('pin').value.trim();
-  if (!/^\d{6}$/.test(pin) && !(pin.length >= PIN_ADMIN_MIN && /^\d+$/.test(pin))) { msg('Digite o seu PIN (6 números).'); return; }
+  const pin = document.getElementById('pin').value;
+  if (pin.trim().length < 4) { msg('Digite o seu PIN.'); return; }
   ocupado = true;
   document.getElementById('btnEntrar').disabled = true;
   msg('');
   try {
-    if (pin.length >= PIN_ADMIN_MIN) { await entrarAdmin(pin); return; }
     const r = await consultar(pin);
+    // não é PIN de engenheiro: tenta como administrador
+    if ((r.erro === 'pin' || r.erro === 'bloqueado') && pin.length >= 6 && cfg.adminEmail && !/COLE/i.test(cfg.adminEmail)) {
+      const { error } = await sb.auth.signInWithPassword({ email: cfg.adminEmail, password: pin });
+      if (!error) { guardarPin(''); location.replace('admin.html'); return; }
+    }
     if (r.erro === 'bloqueado') { msg('Muitas tentativas erradas. Aguarde 15 minutos.'); document.getElementById('pin').value = ''; return; }
     if (r.erro) { guardarPin(''); msg(r.restantes > 0 ? `PIN não reconhecido. ${r.restantes} tentativa(s) antes do bloqueio.` : 'PIN não reconhecido.'); document.getElementById('pin').value = ''; return; }
     pinAtual = pin;
@@ -841,6 +879,40 @@ async function abrirNF(id, btn) {
   } finally { btn.disabled = false; }
 }
 
+// ---------- TROCAR O PRÓPRIO PIN ----------
+function abrirTrocaPin() {
+  ['pinAtualTroca', 'pinNovo1', 'pinNovo2'].forEach(id => { document.getElementById(id).value = ''; });
+  document.getElementById('msgTroca').textContent = '';
+  document.getElementById('modalPin').hidden = false;
+  document.getElementById('pinAtualTroca').focus();
+}
+function fecharTrocaPin() { document.getElementById('modalPin').hidden = true; }
+async function trocarPin(ev) {
+  ev.preventDefault();
+  const m = t => { document.getElementById('msgTroca').textContent = t || ''; };
+  const atual = document.getElementById('pinAtualTroca').value, n1 = document.getElementById('pinNovo1').value, n2 = document.getElementById('pinNovo2').value;
+  if (!atual) { m('Digite o seu PIN atual.'); return; }
+  if (!pinValido(n1)) { m(REGRA_PIN); return; }
+  if (n1 !== n2) { m('Os dois novos PINs não são iguais.'); return; }
+  if (n1 === atual) { m('O novo PIN é igual ao atual.'); return; }
+  const btn = document.getElementById('btnTrocaPin');
+  btn.disabled = true; m('');
+  try {
+    const { data: r, error } = await sb.rpc('engenheiro_trocar_pin', { p_pin_atual: atual, p_pin_novo: n1 });
+    if (error) { m('Não consegui salvar agora. Tente de novo.'); return; }
+    if (r.erro === 'pin') { m(r.restantes > 0 ? `PIN atual incorreto. ${r.restantes} tentativa(s) antes do bloqueio.` : 'PIN atual incorreto.'); return; }
+    if (r.erro === 'bloqueado') { m('Muitas tentativas. Aguarde 15 minutos.'); return; }
+    if (r.erro === 'em_uso') { m('Esse PIN não pode ser usado. Escolha outro.'); return; }
+    if (r.erro === 'formato') { m(REGRA_PIN); return; }
+    if (r.erro) { m('Não consegui trocar o PIN.'); return; }
+    let lembrado = false; try { lembrado = !!localStorage.getItem(CHAVE_PIN); } catch (e) {}
+    pinAtual = n1;
+    guardarPin(n1, lembrado);
+    fecharTrocaPin();
+    toast('✓ PIN trocado. Use o novo da próxima vez.');
+  } finally { btn.disabled = false; }
+}
+
 // quadro "Suas obras": um cartão por obra (clique para ver só ela) + "Todas"
 function desenharObras() {
   const obras = dados.obras || [];
@@ -912,15 +984,15 @@ async function abrirConvite(token) {
 async function criarPin(ev) {
   ev.preventDefault();
   const p1 = document.getElementById('novoPin').value, p2 = document.getElementById('novoPin2').value;
-  if (!/^\d{6}$/.test(p1)) { msgConv('O PIN precisa ter 6 números.'); return; }
+  if (!pinValido(p1)) { msgConv(REGRA_PIN); return; }
   if (p1 !== p2) { msgConv('Os dois PINs não são iguais.'); return; }
-  if (/^(\d)\1{5}$/.test(p1) || '0123456789'.includes(p1) || '9876543210'.includes(p1)) { msgConv('PIN fácil demais (ex.: 111111 ou 123456). Escolha outro.'); return; }
   const btn = document.getElementById('btnCriar');
   btn.disabled = true; msgConv('');
   const { data: r, error } = await sb.rpc('criar_pin_convite', { p_token: tokenConvite, p_pin: p1 });
   btn.disabled = false;
   if (error) { msgConv('Não consegui salvar agora. Tente de novo.'); return; }
   if (r.erro === 'em_uso') { msgConv('Esse PIN não pode ser usado. Escolha outro.'); return; }
+  if (r.erro === 'formato') { msgConv(REGRA_PIN); return; }
   if (r.erro === 'bloqueado') { msgConv('Muitas tentativas. Aguarde 15 minutos.'); return; }
   if (r.erro) { msgConv('Este link expirou ou já foi usado. Peça um novo a Suprimentos.'); btn.disabled = true; return; }
   history.replaceState(null, '', location.pathname);
