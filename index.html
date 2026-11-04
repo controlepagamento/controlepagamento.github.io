@@ -743,7 +743,8 @@ function desenhar() {
   desenharObras();
   const selLote = document.getElementById('fLote');
   const lotes = [...new Set((dados.itens || []).filter(i => !obra || i.obra === obra).map(i => i.envio).filter(Boolean))].sort().reverse();
-  const loteAtual = lotes.includes(selLote.value) ? selLote.value : '';
+  const pedido = loteDoLink || selLote.value; loteDoLink = '';
+  const loteAtual = lotes.includes(pedido) ? pedido : '';
   selLote.innerHTML = '<option value="">Todos os lotes</option>' + lotes.map(l => {
     const n = (dados.itens || []).filter(i => i.envio === l && (!obra || i.obra === obra));
     const p = n.filter(precisaResolver).length;
@@ -1002,6 +1003,9 @@ async function criarPin(ev) {
   document.getElementById('lembrar').checked = document.getElementById('lembrarConv').checked;
   await entrar();
 }
+
+// link do e-mail de lembrete: ?lote=AAAA-MM-DD abre já filtrado naquele lote
+let loteDoLink = (new URLSearchParams(location.search).get('lote') || '').replace(/[^0-9-]/g, '').slice(0, 10);
 
 // ---------- AO ABRIR ----------
 (async () => {

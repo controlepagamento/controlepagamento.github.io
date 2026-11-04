@@ -259,6 +259,8 @@ body.bloqueado .app{display:none}
 .cob-botoes{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
 .cob-passos{margin:8px 0 8px 18px;font-size:13px;line-height:1.7;color:var(--text-primary)}
 .cob-passos a,.cob-muted a{color:var(--blue)}
+.cob-sexta{margin:0 0 16px;padding:12px 14px;border:1px solid var(--border);border-radius:10px;background:var(--bg-elevated)}
+.cob-sexta code{background:var(--bg-input);padding:2px 6px;border-radius:5px;white-space:nowrap}
 .btn.sm{padding:5px 10px;font-size:12px}
 .eng-novo{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
 
@@ -847,6 +849,117 @@ input::placeholder,textarea::placeholder{color:var(--text-dim)}
 </div>
 
 <!-- Script que roda no sistema (preenchido com os dados do envio ao clicar em Vincular) -->
+<script type="text/plain" id="tplGoogle">
+// Controle de Pagamento — lembretes por e-mail, por OBRA e LOTE
+// Responde o seu e-mail de sexta "OBRA … - ENVIO DE NF dd-mm-aa" (este Gmail precisa estar em CÓPIA nele).
+// Se não achar, manda um e-mail novo com esse mesmo assunto.
+//
+// Como instalar (uma vez):
+//   1) Cole tudo isto em script.google.com, logado no Gmail que vai enviar.
+//   2) No menu da esquerda: Serviços (+) → "Gmail API" → Adicionar.
+//   3) Salve (💾), escolha a função "instalar" e clique em ▶ Executar. Autorize.
+// Para desligar: mude para "Desligado" na aba Cobrança do Controle.
+
+const SUPABASE_URL = '__URL__';
+const SUPABASE_KEY = '__KEY__';     // chave pública (a mesma do site)
+const CODIGO = '__CODIGO__';        // gerado pelo Controle; não compartilhe
+
+function instalar() {
+  if (typeof Gmail === 'undefined') throw new Error('Falta adicionar o serviço "Gmail API": menu da esquerda, Serviços (+) → Gmail API → Adicionar. Depois execute "instalar" de novo.');
+  ScriptApp.getProjectTriggers().forEach(t => ScriptApp.deleteTrigger(t));
+  ScriptApp.newTrigger('verificar').timeBased().everyMinutes(15).create();
+  verificar();
+  Logger.log('Instalado: vou verificar a cada 15 minutos.');
+}
+
+function chamar(funcao, corpo) {
+  const r = UrlFetchApp.fetch(SUPABASE_URL + '/rest/v1/rpc/' + funcao, {
+    method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+    headers: { apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY },
+    payload: JSON.stringify(corpo)
+  });
+  if (r.getResponseCode() >= 300) throw new Error(funcao + ': ' + r.getContentText());
+  return JSON.parse(r.getContentText() || 'null');
+}
+
+function verificar() {
+  const d = chamar('lembretes_preparar', { p_token: CODIGO });
+  if (d.erro) throw new Error('Código inválido: copie o script de novo no Controle (aba Cobrança).');
+  if (!d.enviar) return;
+  const eu = Session.getEffectiveUser().getEmail().toLowerCase();
+  const cache = {};
+  for (const e of d.emails) {
+    const r = { id: e.id };
+    try {
+      let conv = null;
+      if (e.tipo === 'engenheiro' && e.lote && e.obra) conv = acharConversa(e, eu, cache);
+      if (e.teste) {
+        const nota = conv
+          ? 'E-mail de sexta encontrado ✓ (' + conv.assunto.replace(/[<>&]/g, '') + ').'
+          : '<b style="color:#b45309">E-mail de sexta NÃO encontrado</b>: sairia como e-mail novo. Confira se o ' + eu + ' estava em cópia e se o assunto era "OBRA ' + String(e.obra).replace(/^\s*obra\s+/i, '').toUpperCase() + ' - ENVIO DE NF ' + loteBr(e.lote) + '".';
+        e.html = String(e.html).replace('%CONVERSA%', nota);
+        conv = null;   // no modo teste nunca responde a conversa verdadeira
+      }
+      enviar(e, conv, eu, d.responderPara);
+      r.ok = true;
+      r.conversa = e.teste ? 'teste' : conv ? 'respondeu o e-mail de sexta' : 'e-mail novo';
+    } catch (err) {
+      r.erro = String((err && err.message) || err);
+      r.adiado = /limit|quota|rate|exceeded|limite/i.test(r.erro);
+    }
+    chamar('lembretes_resultado', { p_token: CODIGO, p_res: [r] });
+    if (r.adiado) break;   // limite do dia do Gmail: o resto fica na fila e sai no dia seguinte
+  }
+}
+
+function loteBr(lote) {
+  const p = String(lote).slice(0, 10).split('-');
+  return p[2] + '-' + p[1] + '-' + p[0].slice(2);
+}
+
+// acha a conversa da obra/lote: o seu e-mail de sexta "OBRA … - ENVIO DE NF dd-mm-aa" (de preferência) ou o lembrete anterior
+function norm(s) {
+  return String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/\s+/g, ' ').trim();
+}
+function acharConversa(e, eu, cache) {
+  if (!cache.threads) cache.threads = GmailApp.search('"envio de nf" newer_than:120d', 0, 300);
+  const p = String(e.lote).slice(0, 10).split('-');
+  const reData = new RegExp('(^|\\D)0?' + Number(p[2]) + '\\s*[/.-]\\s*0?' + Number(p[1]) + '\\s*[/.-]\\s*(20)?' + p[0].slice(2) + '(?!\\d)');
+  const obra = norm(e.obra).replace(/^OBRA\s+/, '');
+  const reObra = new RegExp('(^|[^A-Z0-9])' + obra.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*[-–—]');
+  let achou = null;
+  for (const t of cache.threads) {
+    const assunto = norm(t.getFirstMessageSubject());
+    if (/^\[TESTE\]/.test(assunto) || !reData.test(assunto) || !reObra.test(assunto)) continue;
+    const msgs = t.getMessages();
+    const deSexta = msgs[0].getFrom().toLowerCase().indexOf(eu) < 0;   // começou pelo seu e-mail da empresa
+    if (!achou || (deSexta && !achou.deSexta)) achou = { t: t, msgs: msgs, deSexta: deSexta };
+    if (deSexta) break;
+  }
+  if (!achou) return null;
+  const ids = achou.msgs.map(x => x.getHeader('Message-ID')).filter(String);
+  return { threadId: achou.t.getId(), assunto: achou.msgs[0].getSubject(), inReplyTo: ids[ids.length - 1], refs: ids.join(' ') };
+}
+
+// envia pelo Gmail; com "conv", entra como resposta na mesma conversa
+function enviar(e, conv, eu, responderPara) {
+  const cod = s => '=?UTF-8?B?' + Utilities.base64Encode(s, Utilities.Charset.UTF_8) + '?=';
+  const b64 = s => Utilities.base64Encode(s, Utilities.Charset.UTF_8).replace(/.{76}(?=.)/g, '$&\r\n');
+  const fronteira = 'cp' + Utilities.getUuid().replace(/-/g, '');
+  const assunto = conv ? (/^\s*(re|res|rv|enc|fwd?)\s*:/i.test(conv.assunto) ? conv.assunto : 'RE: ' + conv.assunto) : e.assunto;
+  const linhas = ['From: ' + cod('Controle de Pagamento') + ' <' + eu + '>', 'To: ' + e.para];
+  if (e.cc) linhas.push('Cc: ' + e.cc);
+  if (responderPara) linhas.push('Reply-To: ' + responderPara);
+  if (conv && conv.inReplyTo) linhas.push('In-Reply-To: ' + conv.inReplyTo, 'References: ' + conv.refs);
+  linhas.push('Subject: ' + cod(assunto), 'MIME-Version: 1.0', 'Content-Type: multipart/alternative; boundary="' + fronteira + '"', '',
+    '--' + fronteira, 'Content-Type: text/plain; charset=UTF-8', 'Content-Transfer-Encoding: base64', '', b64(e.texto || ''),
+    '--' + fronteira, 'Content-Type: text/html; charset=UTF-8', 'Content-Transfer-Encoding: base64', '', b64(e.html || ''),
+    '--' + fronteira + '--', '');
+  const msg = { raw: Utilities.base64EncodeWebSafe(linhas.join('\r\n')) };
+  if (conv) msg.threadId = conv.threadId;
+  Gmail.Users.Messages.send(msg, 'me');
+}
+</script>
 <script type="text/plain" id="tplVincular">
 // ============================================================
 // Vincular NFs no sistema + arquivar na pasta das obras
@@ -3359,7 +3472,7 @@ async function salvarEmailEng(inp) {
 const DIAS_SEMANA = [[1, 'Seg'], [2, 'Ter'], [3, 'Qua'], [4, 'Qui'], [5, 'Sex'], [6, 'Sáb']];
 let lemCfg = null, lemEstado = {}, lemHist = [];
 const lemPadrao = () => ({
-  modo: 'desligado', emailGustavo: '', dias: [1, 4], hora: 8, diasLembrete: 3, diasEscalar: 7, resumoGustavo: true,
+  modo: 'desligado', emailGustavo: '', ccSempre: '', dias: [1], hora: 8, diasLembrete: 3, diasEscalar: 7, resumoGustavo: true,
   site: location.origin + location.pathname.replace(/[^/]*$/, ''), token: ''
 });
 function novoToken() {
@@ -3401,7 +3514,7 @@ function metricasEng(e) {
   const media = tempos.length ? tempos.reduce((a, b) => a + b, 0) / tempos.length : null;
   const ultimaResp = minhas.length ? minhas[minhas.length - 1].criado_em : null;
   const resp30 = minhas.filter(r => Date.now() - Date.parse(r.criado_em) < 30 * DIA_MS).length;
-  const nivel = maisAntiga >= esc ? 2 : maisAntiga >= lem ? 1 : 0;
+  const nivel = maisAntiga >= lem + esc ? 2 : maisAntiga >= lem ? 1 : 0;
   return { comEle, esperandoVoce, nunca, maisAntiga, media, ultimaResp, resp30, nivel, lem, esc };
 }
 
@@ -3415,7 +3528,7 @@ async function renderCob() {
   const ativos = engenheiros.filter(e => e.ativo);
   const linhas = ativos.map(e => ({ e, m: metricasEng(e) }))
     .sort((a, b) => b.m.nivel - a.m.nivel || b.m.maisAntiga - a.m.maisAntiga || b.m.comEle.length - a.m.comEle.length);
-  const esc = Number(lemCfg.diasEscalar), lem = Number(lemCfg.diasLembrete);
+  const lem = Number(lemCfg.diasLembrete), esc = lem + Number(lemCfg.diasEscalar);   // 2º aviso = lembrete + X dias
   // uma cobrança conta uma vez só, mesmo que a obra tenha dois engenheiros
   const unico = arr => new Map(arr.map(x => [x.n.id, x])).size;
   const todasComEles = linhas.flatMap(l => l.m.comEle);
@@ -3434,7 +3547,7 @@ async function renderCob() {
     ${falta07 ? '<div class="info-card" style="color:var(--amber)">⚠️ Falta rodar o <strong>supabase/ATUALIZAR_TUDO.sql</strong> no SQL Editor do Supabase. Sem ele não aparecem o último acesso nem os lembretes por e-mail.</div>' : ''}
     <div class="cob-cards">
       <div class="sum-card"><div class="label">Com os engenheiros</div><div class="value">${totPend}</div><div class="sub">cobranças esperando ação deles</div></div>
-      <div class="sum-card ${totAtras ? 'red' : ''}"><div class="label">Paradas há ${esc}+ dias</div><div class="value" style="color:${totAtras ? 'var(--accent)' : ''}">${totAtras}</div><div class="sub">entram com cópia ao coordenador</div></div>
+      <div class="sum-card ${totAtras ? 'red' : ''}"><div class="label">Paradas há ${esc}+ dias</div><div class="value" style="color:${totAtras ? 'var(--accent)' : ''}">${totAtras}</div><div class="sub">na fase do 2º aviso (coordenador em cópia)</div></div>
       <div class="sum-card"><div class="label">Esperando você</div><div class="value">${totVoce}</div><div class="sub">já respondidas · <a href="#" onclick="showTab('resp');return false">ver respostas</a></div></div>
       <div class="sum-card ${semEntrar ? 'amber' : ''}"><div class="label">Sem entrar há 7+ dias</div><div class="value">${falta07 ? '—' : semEntrar}</div><div class="sub">engenheiros (ou sem acesso registrado)</div></div>
     </div>
@@ -3457,7 +3570,7 @@ async function renderCob() {
           <td>${fmtMedia(m.media)}</td>
           <td>${m.ultimaResp ? haQuanto(m.ultimaResp) : '<span style="color:var(--text-muted)">nunca</span>'}</td>
           <td>${textoAcesso(e) || '—'}</td>
-          <td>${!e.email ? `<a href="#" onclick="showTab('eng');return false" style="color:var(--amber)">sem e-mail</a>` : m.nivel === 2 && e.emailCopia ? 'lembrete + cópia' : m.nivel >= 1 ? 'recebe lembrete' : '—'}</td>
+          <td>${!e.email ? `<a href="#" onclick="showTab('eng');return false" style="color:var(--amber)">sem e-mail</a>` : m.nivel === 2 ? '2º aviso' + (e.emailCopia ? ' + coordenador' : '') : m.nivel >= 1 ? 'lembrete' : '—'}</td>
         </tr>`).join('') || '<tr><td colspan="10">Nenhum engenheiro ativo.</td></tr>'}
         </tbody>
       </table>
@@ -3465,6 +3578,35 @@ async function renderCob() {
     </div>
     ${falta07 ? '' : htmlLembretes(ativos)}
   </div>`;
+}
+
+// ajuda para o e-mail de sexta (um por obra): o lembrete responde nele se o Gmail do Controle estiver em Cc
+// e o assunto for "OBRA <nome no Controle> - ENVIO DE NF dd-mm-aa"
+let sextaLote = '';
+const assuntoSexta = (obra, lote) => { const [y, m, d] = lote.split('-'); return `OBRA ${String(obra).replace(/^\s*obra\s+/i, '').toLocaleUpperCase('pt-BR')} - ENVIO DE NF ${d}-${m}-${y.slice(2)}`; };
+async function copiarAssunto(btn) {
+  const ok = await copiarTexto(btn.dataset.a);
+  const t = btn.textContent; btn.textContent = ok ? '✓ copiado' : 'não copiou'; setTimeout(() => { btn.textContent = t; }, 1300);
+}
+function htmlSexta(ativos) {
+  const lotes = [...new Set(envios.map(e => e.data).filter(Boolean))].sort().reverse();
+  if (!lotes.length) return '';
+  if (!lotes.includes(sextaLote)) sextaLote = lotes[0];
+  const obras = [...new Set(envios.filter(e => e.data === sextaLote).flatMap(e => (e.nfs || []).map(n => n.obra)).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  const gmail = (window.MPH_CONFIG || {}).adminEmail || 'controlepagamentogustavo@gmail.com';
+  return `<details class="cob-det cob-sexta" open><summary>📤 Seu e-mail de sexta (um por obra): como mandar para o lembrete responder nele</summary>
+    <div class="cob-muted" style="margin:8px 0 10px">Coloque <strong>${escHtml(gmail)}</strong> em <strong>Cc</strong> e use este assunto, com o nome da obra igual ao do Controle. Sem isso, o lembrete sai como e-mail novo.</div>
+    <select class="eng-input" style="min-width:0;margin-bottom:8px" onchange="sextaLote=this.value;renderCob()">${lotes.map(l => `<option value="${l}" ${l === sextaLote ? 'selected' : ''}>Envio de ${fmtDate(l)}</option>`).join('')}</select>
+    <table class="cob-itens">${obras.map(o => {
+      const a = assuntoSexta(o, sextaLote);
+      const engs = ativos.filter(e => e.obras.includes(o));
+      const para = engs.map(e => e.email).filter(Boolean).join(', ');
+      return `<tr>
+      <td><code style="font-size:11.5px">${escHtml(a)}</code></td>
+      <td><button class="btn sm" data-a="${escHtml(a)}" onclick="copiarAssunto(this)">📋 assunto</button></td>
+      <td>${engs.length ? engs.map(e => escHtml(e.nome) + (e.email ? '' : ' <span style="color:var(--amber)">(sem e-mail)</span>')).join(', ') : '<span style="color:var(--amber)">nenhum engenheiro com esta obra</span>'}</td>
+      <td>${para ? `<button class="btn sm" data-a="${escHtml(para)}" onclick="copiarAssunto(this)">📋 para</button>` : ''}</td></tr>`; }).join('')}</table>
+  </details>`;
 }
 
 function htmlLembretes(ativos) {
@@ -3479,14 +3621,15 @@ function htmlLembretes(ativos) {
   const ult = lemEstado.ultimoEnvio ? `Último envio: ${new Date(lemEstado.ultimoEnvio).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })} (${lemEstado.ultimoQtd ?? 0} e-mail(s))` : 'Nenhum envio ainda.';
   const hist = lemHist.length ? `<details class="cob-det" style="margin-top:12px"><summary>Histórico de envios</summary><table class="cob-itens">${lemHist.map(h => `<tr>
       <td style="white-space:nowrap">${new Date(h.criado_em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</td>
-      <td>${h.tipo === 'resumo' ? 'Resumo para você' : escHtml(h.engenheiro_nome || '')}${h.teste ? ' <span class="cob-muted">(teste)</span>' : ''}</td>
+      <td>${h.tipo === 'resumo' ? 'Resumo para você' : `<strong>${escHtml(h.obra || h.engenheiro_nome || '')}</strong>${h.lote_data ? ' · envio ' + fmtDate(h.lote_data).slice(0, 6) + fmtDate(h.lote_data).slice(8) : ''} · ${h.etapa === 2 ? '<strong style="color:var(--accent)">2º aviso</strong>' : 'lembrete'}`}${h.teste ? ' <span class="cob-muted">(teste)</span>' : ''}</td>
       <td>${escHtml(h.para || '')}${h.cc ? ` <span class="cob-muted">cc ${escHtml(h.cc)}</span>` : ''}</td>
-      <td>${h.qtd} cobrança(s)${h.atrasadas ? `, <strong style="color:var(--accent)">${h.atrasadas} atrasada(s)</strong>` : ''}</td>
-      <td>${h.status === 'enviado' ? '✓ enviado' : h.status === 'erro' ? `<span style="color:var(--accent)" title="${escHtml(h.erro || '')}">erro: ${escHtml((h.erro || '').slice(0, 60))}</span>` : 'preparando…'}</td></tr>`).join('')}</table></details>` : '';
+      <td>${h.qtd} cobrança(s)${h.tipo !== 'resumo' && h.atrasadas ? `, <strong style="color:var(--accent)">${h.atrasadas} vencida(s)</strong>` : ''}</td>
+      <td>${h.status === 'enviado' ? `✓ enviado${h.conversa && h.conversa !== 'teste' ? ` <span class="cob-muted">(${escHtml(h.conversa)})</span>` : ''}` : h.status === 'adiado' ? '⏳ adiado: limite do Gmail, sai no dia seguinte' : h.status === 'fila' ? 'na fila…' : h.status === 'erro' ? `<span style="color:var(--accent)" title="${escHtml(h.erro || '')}">erro: ${escHtml((h.erro || '').slice(0, 60))}</span>` : 'preparando…'}</td></tr>`).join('')}</table></details>` : '';
   return `
     <div class="envio-card" style="overflow:visible">
-      <div class="cob-tit">✉️ Lembretes automáticos por e-mail</div>
+      <div class="cob-tit">✉️ Lembretes automáticos por e-mail <span>um por obra e por envio, respondendo o seu e-mail de sexta da obra</span></div>
       <div class="cob-lem">
+        ${htmlSexta(ativos)}
         <div class="cob-status">${status}<br><span class="cob-muted">${ult}</span></div>
         <div class="cob-form">
           <label>Envio
@@ -3497,14 +3640,16 @@ function htmlLembretes(ativos) {
             </select></label>
           <label>Seu e-mail <span class="cob-muted">(recebe o resumo e os testes)</span>
             <input class="eng-input" id="lemEmail" type="email" value="${escHtml(c.emailGustavo)}" placeholder="seu e-mail"></label>
+          <label>Cópia em todos os lembretes <span class="cob-muted">(opcional; vários separados por vírgula)</span>
+            <input class="eng-input" id="lemCc" type="text" value="${escHtml(c.ccSempre || '')}" placeholder="ex.: seu e-mail da empresa, gisele@…"></label>
           <label>Dias de envio
             <span class="cob-dias">${DIAS_SEMANA.map(([n, t]) => `<label><input type="checkbox" class="lem-dia" value="${n}" ${c.dias.includes(n) ? 'checked' : ''}> ${t}</label>`).join('')}</span></label>
           <label>A partir das
             <select class="eng-input" id="lemHora">${Array.from({ length: 13 }, (_, i) => i + 6).map(h => `<option value="${h}" ${+c.hora === h ? 'selected' : ''}>${h}h</option>`).join('')}</select></label>
-          <label>Lembrar o engenheiro quando a cobrança estiver parada há
-            <span><input class="eng-input cob-num" id="lemDias" type="number" min="0" max="60" value="${c.diasLembrete}"> dias ou mais</span></label>
-          <label>Copiar o coordenador quando passar de
-            <span><input class="eng-input cob-num" id="lemEsc" type="number" min="1" max="90" value="${c.diasEscalar}"> dias</span></label>
+          <label>Lembrete: quando o envio tiver
+            <span><input class="eng-input cob-num" id="lemDias" type="number" min="0" max="60" value="${c.diasLembrete}"> dias <span class="cob-muted">(sexta → segunda = 3)</span></span></label>
+          <label>2º aviso, com o coordenador em cópia:
+            <span><input class="eng-input cob-num" id="lemEsc" type="number" min="1" max="90" value="${c.diasEscalar}"> dias depois do lembrete, sem resolver</span></label>
           <label class="cob-check"><input type="checkbox" id="lemResumo" ${c.resumoGustavo ? 'checked' : ''}> Me mandar um resumo de todos os engenheiros no mesmo dia</label>
         </div>
         ${semEmail.length ? `<div class="cob-aviso">Sem e-mail cadastrado (não recebem lembrete): <strong>${semEmail.map(escHtml).join(', ')}</strong> — preencha na aba <a href="#" onclick="showTab('eng');return false">👥 Usuários</a>.</div>` : ''}
@@ -3518,22 +3663,29 @@ function htmlLembretes(ativos) {
           <ol class="cob-passos">
             <li>Abra <a href="https://script.google.com/home/projects/create" target="_blank" rel="noopener">script.google.com</a> logado no Gmail que vai <strong>enviar</strong> os e-mails (ex.: controlepagamentogustavo@gmail.com).</li>
             <li>Clique em <strong>📋 Copiar script do Google</strong> aqui, apague o que estiver no editor de lá e cole. Clique no 💾 para salvar.</li>
+            <li>No menu da esquerda de lá, em <strong>Serviços</strong> clique no <strong>+</strong>, escolha <strong>Gmail API</strong> e clique em <strong>Adicionar</strong>. É o que permite responder dentro do e-mail de sexta.</li>
             <li>No menu de funções lá em cima, escolha <strong>instalar</strong> e clique em <strong>▶ Executar</strong>. Autorize com a sua conta (em "Google hasn't verified this app", clique em <em>Advanced → Go to… (unsafe)</em>: o script é seu).</li>
             <li>Pronto. Volte aqui e recarregue: aparece <strong>✓ script do Google ativo</strong>. Comece no modo <strong>Teste</strong>, veja como chega e depois mude para <strong>Ligado</strong>.</li>
           </ol>
-          <div class="cob-muted">Se o código do script vazar, <a href="#" onclick="novoCodigoScript();return false">gere um código novo</a> e cole o script de novo. O script verifica a cada 15 minutos e envia uma vez por dia, nos dias e horário escolhidos. O Gmail grátis envia até 100 e-mails por dia. Cobrança que o engenheiro já respondeu (esperando você aplicar) não entra no lembrete.</div>
+          <div class="cob-muted">Se o código do script vazar, <a href="#" onclick="novoCodigoScript();return false">gere um código novo</a> e cole o script de novo. O script verifica a cada 15 minutos e coloca os lembretes na fila uma vez por dia, nos dias e horário escolhidos. Se o Gmail bater o limite do dia, o que faltar sai no dia seguinte (inclusive sábado e domingo). Cobrança que o engenheiro já respondeu (esperando você aplicar) não entra no lembrete.</div>
         </details>
         ${hist}
       </div>
     </div>`;
 }
 
+// "a@x.com; b@y.com" → "a@x.com, b@y.com" ('' se vazio, null se algum for inválido)
+function listaEmails(v) {
+  const l = String(v || '').split(/[;,\s]+/).filter(Boolean);
+  return l.every(x => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(x)) ? l.join(', ') : null;
+}
 function lerFormLembretes() {
   const dias = [...document.querySelectorAll('.lem-dia:checked')].map(x => +x.value);
   return {
     ...lemCfg,
     modo: document.getElementById('lemModo').value,
     emailGustavo: document.getElementById('lemEmail').value.trim(),
+    ccSempre: listaEmails(document.getElementById('lemCc').value),
     dias, hora: +document.getElementById('lemHora').value,
     diasLembrete: Math.max(0, +document.getElementById('lemDias').value || 0),
     diasEscalar: Math.max(1, +document.getElementById('lemEsc').value || 7),
@@ -3543,9 +3695,9 @@ function lerFormLembretes() {
 async function salvarLembretes(silencioso) {
   const c = lerFormLembretes();
   if (c.emailGustavo && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(c.emailGustavo)) { alert('Confira o seu e-mail.'); return false; }
+  if (c.ccSempre === null) { alert('Confira os e-mails da "Cópia em todos os lembretes" (separe com vírgula).'); return false; }
   if (c.modo === 'teste' && !c.emailGustavo) { alert('No modo Teste, os e-mails vão para você: preencha o seu e-mail.'); return false; }
   if (c.modo !== 'desligado' && !c.dias.length) { alert('Marque pelo menos um dia de envio.'); return false; }
-  if (c.diasEscalar < c.diasLembrete) { alert('O prazo para copiar o coordenador precisa ser maior ou igual ao do lembrete.'); return false; }
   lemCfg = c;
   await salvarConfig('lembretes', c);
   if (!silencioso) {
@@ -3579,58 +3731,23 @@ async function enviarLembretesAgora() {
   if (lemCfg.modo === 'desligado') { alert('O envio está Desligado. Escolha Teste ou Ligado primeiro.'); return; }
   if (!lemEstado.visto) { alert('Falta instalar o script do Google (veja "Como instalar"). É ele que envia os e-mails.'); return; }
   const para = lemCfg.modo === 'teste' ? `para você (${lemCfg.emailGustavo}), em modo Teste` : 'para os engenheiros';
-  if (!confirm(`Enviar os lembretes agora, ${para}?\n\nO script do Google envia na próxima verificação (em até 15 minutos).`)) return;
-  const { error } = await sb.rpc('admin_lembretes_enviar_agora');
+  let cc = '';
+  for (;;) {
+    const r = prompt(`Enviar os lembretes agora, ${para}.\n\nQuer colocar alguém em CÓPIA só neste envio? Digite os e-mails separados por vírgula, ou deixe em branco.${lemCfg.ccSempre ? `\n(A cópia fixa ${lemCfg.ccSempre} já vai junto.)` : ''}\n\nO script do Google envia em até 15 minutos.`, cc);
+    if (r === null) return;
+    cc = listaEmails(r);
+    if (cc !== null) break;
+    alert('Algum e-mail está inválido. Confira e separe com vírgula.'); cc = r;
+  }
+  const { error } = await sb.rpc('admin_lembretes_enviar_agora', { p_cc: cc || null });
   if (error) { alert('Não consegui: ' + error.message); return; }
   alert('✔ Combinado: sai em até 15 minutos. O resultado aparece no Histórico de envios.');
 }
 async function copiarScriptGoogle() {
   if (!(await salvarLembretes(true))) return;
   const cfg = window.MPH_CONFIG || {};
-  const script = `// Controle de Pagamento — lembretes por e-mail
-// Cole tudo em script.google.com, salve (💾) e execute a função "instalar" uma vez.
-// Os e-mails saem pelo Gmail desta conta. Para desligar, mude para "Desligado" no Controle.
-
-const SUPABASE_URL = '${cfg.supabaseUrl}';
-const SUPABASE_KEY = '${cfg.supabaseAnonKey}';   // chave pública (a mesma do site)
-const CODIGO = '${lemCfg.token}';                  // gerado pelo Controle; não compartilhe
-
-function instalar() {
-  ScriptApp.getProjectTriggers().forEach(t => ScriptApp.deleteTrigger(t));
-  ScriptApp.newTrigger('verificar').timeBased().everyMinutes(15).create();
-  verificar();
-  Logger.log('Instalado: vou verificar a cada 15 minutos.');
-}
-
-function chamar(funcao, corpo) {
-  const r = UrlFetchApp.fetch(SUPABASE_URL + '/rest/v1/rpc/' + funcao, {
-    method: 'post', contentType: 'application/json', muteHttpExceptions: true,
-    headers: { apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY },
-    payload: JSON.stringify(corpo)
-  });
-  if (r.getResponseCode() >= 300) throw new Error(funcao + ': ' + r.getContentText());
-  return JSON.parse(r.getContentText() || 'null');
-}
-
-function verificar() {
-  const d = chamar('lembretes_preparar', { p_token: CODIGO });
-  if (d.erro) throw new Error('Código inválido: copie o script de novo no Controle (aba Cobrança).');
-  if (!d.enviar) return;
-  const res = [];
-  d.emails.forEach(e => {
-    try {
-      const msg = { to: e.para, subject: e.assunto, body: e.texto, htmlBody: e.html, name: 'Controle de Pagamento' };
-      if (e.cc) msg.cc = e.cc;
-      if (d.responderPara) msg.replyTo = d.responderPara;
-      MailApp.sendEmail(msg);
-      res.push({ id: e.id, ok: true });
-    } catch (err) {
-      res.push({ id: e.id, ok: false, erro: String(err) });
-    }
-  });
-  chamar('lembretes_resultado', { p_token: CODIGO, p_res: res });
-}
-`;
+  const script = document.getElementById('tplGoogle').textContent.trim()
+    .replace('__URL__', cfg.supabaseUrl).replace('__KEY__', cfg.supabaseAnonKey).replace('__CODIGO__', lemCfg.token) + '\n';
   const ok = await copiarTexto(script);
   if (ok) alert('✔ Script copiado. Agora cole no script.google.com (veja "Como instalar").');
   else { const w = window.open('', '_blank'); if (w) { w.document.write('<pre style="white-space:pre-wrap">' + escHtml(script) + '</pre>'); w.document.close(); } }
