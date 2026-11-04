@@ -3472,7 +3472,7 @@ async function salvarEmailEng(inp) {
 const DIAS_SEMANA = [[1, 'Seg'], [2, 'Ter'], [3, 'Qua'], [4, 'Qui'], [5, 'Sex'], [6, 'Sáb']];
 let lemCfg = null, lemEstado = {}, lemHist = [];
 const lemPadrao = () => ({
-  modo: 'desligado', emailGustavo: '', ccSempre: '', dias: [1], hora: 8, diasLembrete: 3, diasEscalar: 7, resumoGustavo: true,
+  modo: 'desligado', emailGustavo: '', ccSempre: '', aPartirDe: '', dias: [1], hora: 8, diasLembrete: 3, diasEscalar: 7, resumoGustavo: true,
   site: location.origin + location.pathname.replace(/[^/]*$/, ''), token: ''
 });
 function novoToken() {
@@ -3650,6 +3650,8 @@ function htmlLembretes(ativos) {
             <span><input class="eng-input cob-num" id="lemDias" type="number" min="0" max="60" value="${c.diasLembrete}"> dias <span class="cob-muted">(sexta → segunda = 3)</span></span></label>
           <label>2º aviso, com o coordenador em cópia:
             <span><input class="eng-input cob-num" id="lemEsc" type="number" min="1" max="90" value="${c.diasEscalar}"> dias depois do lembrete, sem resolver</span></label>
+          <label>Cobrar só envios a partir de <span class="cob-muted">(lotes anteriores não geram e-mail)</span>
+            <input class="eng-input" id="lemDesde" type="date" value="${escHtml(c.aPartirDe || '')}"></label>
           <label class="cob-check"><input type="checkbox" id="lemResumo" ${c.resumoGustavo ? 'checked' : ''}> Me mandar um resumo de todos os engenheiros no mesmo dia</label>
         </div>
         ${semEmail.length ? `<div class="cob-aviso">Sem e-mail cadastrado (não recebem lembrete): <strong>${semEmail.map(escHtml).join(', ')}</strong> — preencha na aba <a href="#" onclick="showTab('eng');return false">👥 Usuários</a>.</div>` : ''}
@@ -3686,6 +3688,7 @@ function lerFormLembretes() {
     modo: document.getElementById('lemModo').value,
     emailGustavo: document.getElementById('lemEmail').value.trim(),
     ccSempre: listaEmails(document.getElementById('lemCc').value),
+    aPartirDe: document.getElementById('lemDesde').value || '',
     dias, hora: +document.getElementById('lemHora').value,
     diasLembrete: Math.max(0, +document.getElementById('lemDias').value || 0),
     diasEscalar: Math.max(1, +document.getElementById('lemEsc').value || 7),
