@@ -232,6 +232,33 @@ body.bloqueado .app{display:none}
 .eng-obras label{display:flex;gap:8px;align-items:center;font-size:12.5px;color:var(--text-muted);cursor:pointer;white-space:nowrap}
 .eng-acoes{display:flex;gap:6px;flex-wrap:nowrap;align-items:center;white-space:nowrap}
 .eng-acoes .btn{white-space:nowrap;flex-direction:row}
+.eng-acesso{font-size:11px;margin-top:4px;white-space:nowrap}
+.eng-emails{display:flex;flex-direction:column;gap:5px;min-width:230px}
+.eng-emails .eng-input{min-width:0;width:100%;font-size:12px;padding:6px 9px}
+.cob-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px;margin-bottom:14px}
+.cob-cards a{color:inherit}
+.cob-tit{padding:14px 18px 10px;font-weight:700;font-size:14px;color:var(--text-primary)}
+.cob-tit span{font-weight:400;font-size:12px;color:var(--text-muted);margin-left:8px}
+.cob-tbl th.c,.cob-tbl td.c{text-align:center}
+.cob-tbl td{vertical-align:top}
+.cob-det summary{cursor:pointer;font-weight:600}
+.cob-itens{border-collapse:collapse;margin:8px 0 2px;font-size:12px;font-weight:400}
+.cob-itens td{padding:5px 10px 5px 0;border-bottom:1px solid var(--border);white-space:normal}
+.cob-lem{padding:0 18px 18px}
+.cob-status{margin-bottom:14px;line-height:1.9}
+.cob-muted{color:var(--text-muted);font-size:12px;font-weight:400}
+.cob-form{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px 18px;margin-bottom:14px}
+.cob-form>label{display:flex;flex-direction:column;gap:5px;font-size:12px;font-weight:600;color:var(--text-muted)}
+.cob-form>label .eng-input{min-width:0}
+.cob-form .cob-check{flex-direction:row;align-items:center;gap:8px;grid-column:1/-1;color:var(--text-primary);font-weight:500}
+.cob-num{width:70px;min-width:0!important}
+.cob-dias{display:flex;gap:10px;flex-wrap:wrap;font-weight:500;color:var(--text-primary);padding-top:6px}
+.cob-dias label{display:flex;align-items:center;gap:4px;cursor:pointer}
+.cob-aviso{font-size:12.5px;color:var(--amber);margin-bottom:12px}
+.cob-aviso a{color:inherit}
+.cob-botoes{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.cob-passos{margin:8px 0 8px 18px;font-size:13px;line-height:1.7;color:var(--text-primary)}
+.cob-passos a,.cob-muted a{color:var(--blue)}
 .btn.sm{padding:5px 10px;font-size:12px}
 .eng-novo{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
 
@@ -544,6 +571,7 @@ input::placeholder,textarea::placeholder{color:var(--text-dim)}
   <button class="tab" id="tabPastas" onclick="showTab('pastas')">🏗️ Obras <span class="tab-badge" id="pastasBadge" title="Obras sem caminho cadastrado"></span></button>
   <button class="tab" id="tabEng" onclick="showTab('eng')">👥 Usuários</button>
   <button class="tab" id="tabResp" onclick="showTab('resp')">💬 Respostas <span class="tab-badge" id="respBadge" title="Respostas novas dos engenheiros"></span></button>
+  <button class="tab" id="tabCob" onclick="showTab('cob')">📊 Cobrança <span class="tab-badge" id="cobBadge" title="Cobranças paradas com os engenheiros além do prazo"></span></button>
 </div>
 
 <div id="viewEnvios">
@@ -594,6 +622,7 @@ input::placeholder,textarea::placeholder{color:var(--text-dim)}
 <div id="viewPastas" style="display:none"></div>
 <div id="viewEng" style="display:none"></div>
 <div id="viewResp" style="display:none"></div>
+<div id="viewCob" style="display:none"></div>
 
 </div>
 
@@ -2478,13 +2507,14 @@ function gerarPDFComFiltros(envioFiltroId, obraFiltro) {
 // ABAS
 // ============================================================
 function showTab(t) {
-  for (const [k, view, tab] of [['envios', 'viewEnvios', 'tabEnvios'], ['pastas', 'viewPastas', 'tabPastas'], ['eng', 'viewEng', 'tabEng'], ['resp', 'viewResp', 'tabResp']]) {
+  for (const [k, view, tab] of [['envios', 'viewEnvios', 'tabEnvios'], ['pastas', 'viewPastas', 'tabPastas'], ['eng', 'viewEng', 'tabEng'], ['resp', 'viewResp', 'tabResp'], ['cob', 'viewCob', 'tabCob']]) {
     document.getElementById(view).style.display = t === k ? '' : 'none';
     document.getElementById(tab).classList.toggle('active', t === k);
   }
   if (t === 'pastas') renderPastas();
   if (t === 'eng') renderEng();
   if (t === 'resp') renderResp();
+  if (t === 'cob') renderCob();
 }
 
 function escHtml(s) {
@@ -3142,11 +3172,15 @@ async function migrarDados(obj, nome) {
 // ENGENHEIROS (acesso de consulta por PIN)
 // ============================================================
 let engenheiros = [];
+let falta07 = false;   // true enquanto o 07_cobranca.sql não foi rodado no Supabase
 
 async function carregarEngenheiros() {
-  const { data, error } = await sb.from('engenheiros').select('id,nome,obras,ativo,pin_hash').order('nome');
+  let { data, error } = await sb.from('engenheiros').select('id,nome,obras,ativo,pin_hash,email,email_copia,ultimo_acesso,acessos').order('nome');
+  falta07 = !!error;
+  if (error) ({ data, error } = await sb.from('engenheiros').select('id,nome,obras,ativo,pin_hash').order('nome'));   // SQL 07 ainda não rodado
   if (error) throw error;
-  engenheiros = data.map(e => ({ id: e.id, nome: e.nome, obras: e.obras || [], ativo: e.ativo, temPin: !!e.pin_hash }));
+  engenheiros = data.map(e => ({ id: e.id, nome: e.nome, obras: e.obras || [], ativo: e.ativo, temPin: !!e.pin_hash,
+    email: e.email || '', emailCopia: e.email_copia || '', ultimoAcesso: e.ultimo_acesso || null, acessos: e.acessos || 0 }));
 }
 
 async function renderEng() {
@@ -3165,6 +3199,7 @@ async function renderEng() {
       Se ele esquecer, mande um convite novo — ou use <strong>✏️ Definir</strong> e passe o PIN para ele. O link vale 7 dias e serve uma vez só.
       Desmarque <strong>Ativo</strong> para cortar o acesso sem apagar o cadastro.
     </div>
+    ${falta07 ? '<div class="info-card" style="color:var(--amber)">⚠️ Para ver o último acesso e cadastrar os e-mails, rode o <strong>supabase/ATUALIZAR_TUDO.sql</strong> no SQL Editor do Supabase e recarregue a página.</div>' : ''}
     <div class="eng-novo">
       <input class="eng-input" id="engNovoNome" placeholder="Nome do usuário" onkeydown="if(event.key==='Enter') addEng()">
       <button class="btn primary" onclick="addEng()">+ Adicionar usuário</button>
@@ -3173,15 +3208,20 @@ async function renderEng() {
     <div class="envio-card" style="overflow:visible">
       <div class="tbl-wrap">
       <table class="pastas-tbl">
-        <thead><tr><th>Usuário</th><th style="width:100%">Obras que ele vê</th><th>PIN</th><th>Ativo</th><th></th></tr></thead>
+        <thead><tr><th>Usuário</th><th style="width:100%">Obras que ele vê</th><th>E-mail para os lembretes</th><th>PIN</th><th>Ativo</th><th></th></tr></thead>
         <tbody>
         ${engenheiros.map(e => {
           const lista = [...new Set([...obrasTodas, ...e.obras])].sort((a, b) => a.localeCompare(b, 'pt-BR'));
           return `<tr>
-          <td><input class="eng-input" value="${escHtml(e.nome)}" data-id="${e.id}" onchange="renomearEng(this)"></td>
+          <td><input class="eng-input" value="${escHtml(e.nome)}" data-id="${e.id}" onchange="renomearEng(this)">
+            <div class="eng-acesso">${textoAcesso(e)}</div></td>
           <td><details class="eng-obras"><summary>${e.obras.length ? escHtml(e.obras.join(', ')) : '<span style="color:var(--amber)">nenhuma obra — clique para marcar</span>'}</summary>
             <div class="lista">${lista.map(o => `<label><input type="checkbox" class="link-check" data-id="${e.id}" data-obra="${escHtml(o)}" ${e.obras.includes(o) ? 'checked' : ''} onchange="marcarObraEng(this)"> ${escHtml(o)}</label>`).join('')}</div>
           </details></td>
+          <td><div class="eng-emails">
+            <input class="eng-input" type="email" placeholder="e-mail do engenheiro" value="${escHtml(e.email)}" data-id="${e.id}" data-campo="email" onchange="salvarEmailEng(this)" ${falta07 ? 'disabled title="Rode o ATUALIZAR_TUDO.sql no Supabase"' : ''}>
+            <input class="eng-input" type="email" placeholder="cópia quando atrasar (coordenador)" value="${escHtml(e.emailCopia)}" data-id="${e.id}" data-campo="email_copia" onchange="salvarEmailEng(this)" ${falta07 ? 'disabled' : ''}>
+          </div></td>
           <td><div class="eng-acoes">
             ${e.temPin ? '<span class="badge pago">✓ definido</span>' : '<span class="badge alerta">sem PIN</span>'}
             <button class="btn sm" data-id="${e.id}" onclick="conviteEng(this.dataset.id)">🔗 Convite</button>
@@ -3281,6 +3321,326 @@ async function definirPinEng(id) {
 }
 
 // ============================================================
+// COBRANÇA DOS ENGENHEIROS — último acesso, desempenho e lembretes por e-mail
+// ============================================================
+const DIA_MS = 864e5;
+function haQuanto(iso) {
+  if (!iso) return '';
+  const min = Math.round((Date.now() - Date.parse(iso)) / 6e4);
+  if (min < 2) return 'agora';
+  if (min < 60) return `há ${min} min`;
+  const h = Math.round(min / 60);
+  if (h < 24) return `há ${h} h`;
+  const d = Math.round(h / 24);
+  return d === 1 ? 'ontem' : `há ${d} dias`;
+}
+const diasSemEntrar = e => e.ultimoAcesso ? Math.floor((Date.now() - Date.parse(e.ultimoAcesso)) / DIA_MS) : null;
+function textoAcesso(e) {
+  if (falta07) return '';
+  if (!e.ultimoAcesso) return `<span style="color:var(--amber)" title="O registro de acesso começou com a atualização de novembro/2026">sem acesso registrado</span>`;
+  const d = diasSemEntrar(e);
+  const cor = d >= 14 ? 'var(--accent)' : d >= 7 ? 'var(--amber)' : 'var(--text-muted)';
+  return `<span style="color:${cor}" title="${new Date(e.ultimoAcesso).toLocaleString('pt-BR')} · ${e.acessos} acesso(s)">último acesso ${haQuanto(e.ultimoAcesso)}</span>`;
+}
+async function salvarEmailEng(inp) {
+  const v = inp.value.trim();
+  const lista = v.split(/[;,\s]+/).filter(Boolean);
+  if (lista.some(x => !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(x))) { alert('E-mail inválido: ' + v + '\n\nPara mais de um, separe com vírgula.'); inp.focus(); return; }
+  const valor = lista.join(', ') || null;
+  if (await engUpdate(inp.dataset.id, { [inp.dataset.campo]: valor })) {
+    const e = engenheiros.find(x => x.id === inp.dataset.id);
+    if (e) e[inp.dataset.campo === 'email' ? 'email' : 'emailCopia'] = valor || '';
+    inp.value = valor || '';
+    inp.style.borderColor = 'var(--green)'; setTimeout(() => inp.style.borderColor = '', 1200);
+  }
+}
+
+// ---------- configuração dos lembretes (fica na tabela config) ----------
+const DIAS_SEMANA = [[1, 'Seg'], [2, 'Ter'], [3, 'Qua'], [4, 'Qui'], [5, 'Sex'], [6, 'Sáb']];
+let lemCfg = null, lemEstado = {}, lemHist = [];
+const lemPadrao = () => ({
+  modo: 'desligado', emailGustavo: '', dias: [1, 4], hora: 8, diasLembrete: 3, diasEscalar: 7, resumoGustavo: true,
+  site: location.origin + location.pathname.replace(/[^/]*$/, ''), token: ''
+});
+function novoToken() {
+  const b = crypto.getRandomValues(new Uint8Array(24));
+  return Array.from(b, x => x.toString(16).padStart(2, '0')).join('');
+}
+async function carregarLembretes() {
+  const { data, error } = await sb.from('config').select('chave,valor').in('chave', ['lembretes', 'lembretes_estado']);
+  if (error) throw error;
+  const m = Object.fromEntries((data || []).map(r => [r.chave, r.valor]));
+  lemCfg = { ...lemPadrao(), ...(m.lembretes || {}) };
+  lemEstado = m.lembretes_estado || {};
+  if (!lemCfg.token) { lemCfg.token = novoToken(); await salvarConfig('lembretes', lemCfg); }
+  if (!falta07) {
+    const h = await sb.from('lembretes').select('*').order('criado_em', { ascending: false }).limit(30);
+    lemHist = h.error ? [] : h.data;
+  }
+}
+
+// ---------- métricas de cada engenheiro (calculadas aqui, com os dados do Controle) ----------
+const FALTA_TXT = n => n.ocNegativada ? 'OC negativada' : n.semOC ? 'Sem OC' : 'Falta apropriação';
+function metricasEng(e) {
+  const lem = Number(lemCfg?.diasLembrete ?? 3), esc = Number(lemCfg?.diasEscalar ?? 7);
+  const itens = [];
+  for (const env of envios) for (const n of env.nfs || []) if (e.obras.includes(n.obra)) itens.push({ n, data: env.data, dias: diasDesdeLote(env.data) });
+  const respDoItem = id => respostas.filter(r => r.nf_id === id && ehEng(r));
+  const pend = itens.filter(x => pendenteNF(x.n));
+  const esperandoVoce = pend.filter(x => respDoItem(x.n.id).some(r => r.status === 'nova'));
+  const comEle = pend.filter(x => !esperandoVoce.includes(x)).sort((a, b) => b.dias - a.dias);
+  const nunca = comEle.filter(x => !respDoItem(x.n.id).length);
+  const maisAntiga = comEle.length ? comEle[0].dias : 0;
+  // tempo de resposta: do lote até a 1ª resposta dele em cada cobrança (últimos 90 dias)
+  const loteDe = new Map(itens.map(x => [x.n.id, x.data]));
+  const primeira = new Map();
+  const minhas = respostas.filter(r => ehEng(r) && r.engenheiro_id === e.id);
+  for (const r of minhas) if (r.nf_id && !primeira.has(r.nf_id)) primeira.set(r.nf_id, r.criado_em);
+  const tempos = [...primeira].filter(([id, t]) => loteDe.has(id) && Date.now() - Date.parse(t) < 90 * DIA_MS)
+    .map(([id, t]) => Math.max(0, (Date.parse(t) - Date.parse(loteDe.get(id) + 'T08:00:00-03:00')) / DIA_MS));
+  const media = tempos.length ? tempos.reduce((a, b) => a + b, 0) / tempos.length : null;
+  const ultimaResp = minhas.length ? minhas[minhas.length - 1].criado_em : null;
+  const resp30 = minhas.filter(r => Date.now() - Date.parse(r.criado_em) < 30 * DIA_MS).length;
+  const nivel = maisAntiga >= esc ? 2 : maisAntiga >= lem ? 1 : 0;
+  return { comEle, esperandoVoce, nunca, maisAntiga, media, ultimaResp, resp30, nivel, lem, esc };
+}
+
+async function renderCob() {
+  const view = document.getElementById('viewCob');
+  if (!lemCfg) view.innerHTML = '<div class="pastas-wrap"><div class="info-card">Carregando…</div></div>';
+  try { await Promise.all([carregarEngenheiros(), carregarRespostas()]); await carregarLembretes(); }
+  catch (e) { view.innerHTML = `<div class="pastas-wrap"><div class="info-card">Não consegui carregar: ${escHtml(e.message)}</div></div>`; return; }
+  if (!anexosIds.size) carregarAnexos();
+
+  const ativos = engenheiros.filter(e => e.ativo);
+  const linhas = ativos.map(e => ({ e, m: metricasEng(e) }))
+    .sort((a, b) => b.m.nivel - a.m.nivel || b.m.maisAntiga - a.m.maisAntiga || b.m.comEle.length - a.m.comEle.length);
+  const esc = Number(lemCfg.diasEscalar), lem = Number(lemCfg.diasLembrete);
+  // uma cobrança conta uma vez só, mesmo que a obra tenha dois engenheiros
+  const unico = arr => new Map(arr.map(x => [x.n.id, x])).size;
+  const todasComEles = linhas.flatMap(l => l.m.comEle);
+  const totPend = unico(todasComEles);
+  const totAtras = unico(todasComEles.filter(x => x.dias >= esc));
+  const totVoce = unico(linhas.flatMap(l => l.m.esperandoVoce));
+  const semEntrar = falta07 ? 0 : ativos.filter(e => diasSemEntrar(e) == null || diasSemEntrar(e) >= 7).length;
+  const b = document.getElementById('cobBadge'); if (b) b.textContent = totAtras || '';
+
+  const sit = m => m.nivel === 2 ? `<span class="badge vencido">🔴 travando</span>` : m.nivel === 1 ? `<span class="badge alerta">🟡 atenção</span>` : `<span class="badge pago">🟢 em dia</span>`;
+  const corDias = d => d >= esc ? 'var(--accent)' : d >= lem ? 'var(--amber)' : 'var(--text-muted)';
+  const fmtMedia = v => v == null ? '—' : v < 1 ? 'menos de 1 dia' : `${v.toFixed(1).replace('.', ',')} dias`;
+
+  view.innerHTML = `
+  <div class="pastas-wrap">
+    ${falta07 ? '<div class="info-card" style="color:var(--amber)">⚠️ Falta rodar o <strong>supabase/ATUALIZAR_TUDO.sql</strong> no SQL Editor do Supabase. Sem ele não aparecem o último acesso nem os lembretes por e-mail.</div>' : ''}
+    <div class="cob-cards">
+      <div class="sum-card"><div class="label">Com os engenheiros</div><div class="value">${totPend}</div><div class="sub">cobranças esperando ação deles</div></div>
+      <div class="sum-card ${totAtras ? 'red' : ''}"><div class="label">Paradas há ${esc}+ dias</div><div class="value" style="color:${totAtras ? 'var(--accent)' : ''}">${totAtras}</div><div class="sub">entram com cópia ao coordenador</div></div>
+      <div class="sum-card"><div class="label">Esperando você</div><div class="value">${totVoce}</div><div class="sub">já respondidas · <a href="#" onclick="showTab('resp');return false">ver respostas</a></div></div>
+      <div class="sum-card ${semEntrar ? 'amber' : ''}"><div class="label">Sem entrar há 7+ dias</div><div class="value">${falta07 ? '—' : semEntrar}</div><div class="sub">engenheiros (ou sem acesso registrado)</div></div>
+    </div>
+
+    <div class="envio-card" style="overflow:visible">
+      <div class="cob-tit">Desempenho por engenheiro <span>clique no nome para ver as cobranças paradas com ele</span></div>
+      <div class="tbl-wrap">
+      <table class="pastas-tbl cob-tbl">
+        <thead><tr><th>Engenheiro</th><th>Situação</th><th class="c">Com ele</th><th class="c">Mais antiga</th><th class="c">Nunca respondeu</th><th class="c">Esperando você</th><th>Tempo médio de resposta</th><th>Última resposta</th><th>Último acesso</th><th>Lembrete</th></tr></thead>
+        <tbody>
+        ${linhas.map(({ e, m }) => `<tr>
+          <td>${m.comEle.length ? `<details class="cob-det"><summary>${escHtml(e.nome)}</summary>
+              <table class="cob-itens">${m.comEle.map(x => `<tr><td>${escHtml(x.n.obra)}</td><td>${escHtml((x.n.tipoDoc || 'NF') + ' ' + (x.n.numDoc || ''))}</td><td>${escHtml(x.n.fornecedor)}</td><td style="text-align:right;white-space:nowrap">${fmtVal(x.n.valor)}</td><td>${FALTA_TXT(x.n)}</td><td style="color:${corDias(x.dias)};font-weight:700;white-space:nowrap">${x.dias}d</td><td style="color:var(--text-muted)">${respostas.some(r => r.nf_id === x.n.id && ehEng(r)) ? '💬 comentou' : 'sem resposta'}</td></tr>`).join('')}</table>
+            </details>` : `<strong>${escHtml(e.nome)}</strong>`}</td>
+          <td>${sit(m)}</td>
+          <td class="c">${m.comEle.length}</td>
+          <td class="c" style="color:${corDias(m.maisAntiga)};font-weight:700">${m.comEle.length ? m.maisAntiga + 'd' : '—'}</td>
+          <td class="c" style="${m.nunca.length ? 'color:var(--amber);font-weight:700' : ''}">${m.nunca.length}</td>
+          <td class="c">${m.esperandoVoce.length || '—'}</td>
+          <td>${fmtMedia(m.media)}</td>
+          <td>${m.ultimaResp ? haQuanto(m.ultimaResp) : '<span style="color:var(--text-muted)">nunca</span>'}</td>
+          <td>${textoAcesso(e) || '—'}</td>
+          <td>${!e.email ? `<a href="#" onclick="showTab('eng');return false" style="color:var(--amber)">sem e-mail</a>` : m.nivel === 2 && e.emailCopia ? 'lembrete + cópia' : m.nivel >= 1 ? 'recebe lembrete' : '—'}</td>
+        </tr>`).join('') || '<tr><td colspan="10">Nenhum engenheiro ativo.</td></tr>'}
+        </tbody>
+      </table>
+      </div>
+    </div>
+    ${falta07 ? '' : htmlLembretes(ativos)}
+  </div>`;
+}
+
+function htmlLembretes(ativos) {
+  const c = lemCfg;
+  const semEmail = ativos.filter(e => !e.email).map(e => e.nome);
+  const visto = lemEstado.visto ? Date.now() - Date.parse(lemEstado.visto) : null;
+  const scriptOk = visto != null && visto < 40 * 6e4;
+  const status = !lemEstado.visto
+    ? '<span class="badge alerta">⚠️ script do Google ainda não instalado</span>'
+    : scriptOk ? `<span class="badge pago">✓ script do Google ativo</span> <span class="cob-muted">verificou ${haQuanto(lemEstado.visto)}</span>`
+    : `<span class="badge vencido">script do Google parado</span> <span class="cob-muted">última verificação ${haQuanto(lemEstado.visto)} — abra o script e rode "instalar" de novo</span>`;
+  const ult = lemEstado.ultimoEnvio ? `Último envio: ${new Date(lemEstado.ultimoEnvio).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })} (${lemEstado.ultimoQtd ?? 0} e-mail(s))` : 'Nenhum envio ainda.';
+  const hist = lemHist.length ? `<details class="cob-det" style="margin-top:12px"><summary>Histórico de envios</summary><table class="cob-itens">${lemHist.map(h => `<tr>
+      <td style="white-space:nowrap">${new Date(h.criado_em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</td>
+      <td>${h.tipo === 'resumo' ? 'Resumo para você' : escHtml(h.engenheiro_nome || '')}${h.teste ? ' <span class="cob-muted">(teste)</span>' : ''}</td>
+      <td>${escHtml(h.para || '')}${h.cc ? ` <span class="cob-muted">cc ${escHtml(h.cc)}</span>` : ''}</td>
+      <td>${h.qtd} cobrança(s)${h.atrasadas ? `, <strong style="color:var(--accent)">${h.atrasadas} atrasada(s)</strong>` : ''}</td>
+      <td>${h.status === 'enviado' ? '✓ enviado' : h.status === 'erro' ? `<span style="color:var(--accent)" title="${escHtml(h.erro || '')}">erro: ${escHtml((h.erro || '').slice(0, 60))}</span>` : 'preparando…'}</td></tr>`).join('')}</table></details>` : '';
+  return `
+    <div class="envio-card" style="overflow:visible">
+      <div class="cob-tit">✉️ Lembretes automáticos por e-mail</div>
+      <div class="cob-lem">
+        <div class="cob-status">${status}<br><span class="cob-muted">${ult}</span></div>
+        <div class="cob-form">
+          <label>Envio
+            <select class="eng-input" id="lemModo">
+              <option value="desligado" ${c.modo === 'desligado' ? 'selected' : ''}>Desligado</option>
+              <option value="teste" ${c.modo === 'teste' ? 'selected' : ''}>Teste: todos os e-mails vêm só para mim</option>
+              <option value="ligado" ${c.modo === 'ligado' ? 'selected' : ''}>Ligado: envia para os engenheiros</option>
+            </select></label>
+          <label>Seu e-mail <span class="cob-muted">(recebe o resumo e os testes)</span>
+            <input class="eng-input" id="lemEmail" type="email" value="${escHtml(c.emailGustavo)}" placeholder="seu e-mail"></label>
+          <label>Dias de envio
+            <span class="cob-dias">${DIAS_SEMANA.map(([n, t]) => `<label><input type="checkbox" class="lem-dia" value="${n}" ${c.dias.includes(n) ? 'checked' : ''}> ${t}</label>`).join('')}</span></label>
+          <label>A partir das
+            <select class="eng-input" id="lemHora">${Array.from({ length: 13 }, (_, i) => i + 6).map(h => `<option value="${h}" ${+c.hora === h ? 'selected' : ''}>${h}h</option>`).join('')}</select></label>
+          <label>Lembrar o engenheiro quando a cobrança estiver parada há
+            <span><input class="eng-input cob-num" id="lemDias" type="number" min="0" max="60" value="${c.diasLembrete}"> dias ou mais</span></label>
+          <label>Copiar o coordenador quando passar de
+            <span><input class="eng-input cob-num" id="lemEsc" type="number" min="1" max="90" value="${c.diasEscalar}"> dias</span></label>
+          <label class="cob-check"><input type="checkbox" id="lemResumo" ${c.resumoGustavo ? 'checked' : ''}> Me mandar um resumo de todos os engenheiros no mesmo dia</label>
+        </div>
+        ${semEmail.length ? `<div class="cob-aviso">Sem e-mail cadastrado (não recebem lembrete): <strong>${semEmail.map(escHtml).join(', ')}</strong> — preencha na aba <a href="#" onclick="showTab('eng');return false">👥 Usuários</a>.</div>` : ''}
+        <div class="cob-botoes">
+          <button class="btn primary" onclick="salvarLembretes()">💾 Salvar</button>
+          <button class="btn" onclick="previaLembretes()">👁️ Ver prévia dos e-mails</button>
+          <button class="btn" onclick="enviarLembretesAgora()">📨 Enviar agora</button>
+          <button class="btn" onclick="copiarScriptGoogle()">📋 Copiar script do Google</button>
+        </div>
+        <details class="cob-det" ${lemEstado.visto ? '' : 'open'}><summary>Como instalar (uma vez só, 3 minutos)</summary>
+          <ol class="cob-passos">
+            <li>Abra <a href="https://script.google.com/home/projects/create" target="_blank" rel="noopener">script.google.com</a> logado no Gmail que vai <strong>enviar</strong> os e-mails (ex.: controlepagamentogustavo@gmail.com).</li>
+            <li>Clique em <strong>📋 Copiar script do Google</strong> aqui, apague o que estiver no editor de lá e cole. Clique no 💾 para salvar.</li>
+            <li>No menu de funções lá em cima, escolha <strong>instalar</strong> e clique em <strong>▶ Executar</strong>. Autorize com a sua conta (em "Google hasn't verified this app", clique em <em>Advanced → Go to… (unsafe)</em>: o script é seu).</li>
+            <li>Pronto. Volte aqui e recarregue: aparece <strong>✓ script do Google ativo</strong>. Comece no modo <strong>Teste</strong>, veja como chega e depois mude para <strong>Ligado</strong>.</li>
+          </ol>
+          <div class="cob-muted">Se o código do script vazar, <a href="#" onclick="novoCodigoScript();return false">gere um código novo</a> e cole o script de novo. O script verifica a cada 15 minutos e envia uma vez por dia, nos dias e horário escolhidos. O Gmail grátis envia até 100 e-mails por dia. Cobrança que o engenheiro já respondeu (esperando você aplicar) não entra no lembrete.</div>
+        </details>
+        ${hist}
+      </div>
+    </div>`;
+}
+
+function lerFormLembretes() {
+  const dias = [...document.querySelectorAll('.lem-dia:checked')].map(x => +x.value);
+  return {
+    ...lemCfg,
+    modo: document.getElementById('lemModo').value,
+    emailGustavo: document.getElementById('lemEmail').value.trim(),
+    dias, hora: +document.getElementById('lemHora').value,
+    diasLembrete: Math.max(0, +document.getElementById('lemDias').value || 0),
+    diasEscalar: Math.max(1, +document.getElementById('lemEsc').value || 7),
+    resumoGustavo: document.getElementById('lemResumo').checked
+  };
+}
+async function salvarLembretes(silencioso) {
+  const c = lerFormLembretes();
+  if (c.emailGustavo && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(c.emailGustavo)) { alert('Confira o seu e-mail.'); return false; }
+  if (c.modo === 'teste' && !c.emailGustavo) { alert('No modo Teste, os e-mails vão para você: preencha o seu e-mail.'); return false; }
+  if (c.modo !== 'desligado' && !c.dias.length) { alert('Marque pelo menos um dia de envio.'); return false; }
+  if (c.diasEscalar < c.diasLembrete) { alert('O prazo para copiar o coordenador precisa ser maior ou igual ao do lembrete.'); return false; }
+  lemCfg = c;
+  await salvarConfig('lembretes', c);
+  if (!silencioso) {
+    const msg = c.modo === 'ligado' ? `Lembretes ligados: ${c.dias.map(d => DIAS_SEMANA.find(x => x[0] === d)[1]).join(', ')}, a partir das ${c.hora}h.`
+      : c.modo === 'teste' ? `Modo teste: tudo vai só para ${c.emailGustavo}.` : 'Lembretes desligados.';
+    alert('✔ Salvo. ' + msg + (lemEstado.visto ? '' : '\n\nFalta instalar o script do Google (veja "Como instalar").'));
+    renderCob();
+  }
+  return true;
+}
+async function previaLembretes() {
+  if (!(await salvarLembretes(true))) return;
+  const { data, error } = await sb.rpc('admin_lembretes_previa');
+  if (error) { alert('Não consegui montar a prévia: ' + error.message); return; }
+  const lista = data || [];
+  const w = window.open('', '_blank');
+  const corpo = lista.length ? lista.map(e => `
+    <div style="margin:0 0 28px">
+      <div style="font:13px Arial;color:#374151;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:10px 12px;margin-bottom:8px">
+        <b>Para:</b> ${escHtml(e.para)}${e.cc ? ` &nbsp; <b>Cc:</b> ${escHtml(e.cc)}` : ''}<br><b>Assunto:</b> ${escHtml(e.assunto)}</div>
+      ${e.html}</div>`).join('')
+    : `<p style="font:15px Arial">Hoje ninguém receberia e-mail: nenhuma cobrança está parada há ${lemCfg.diasLembrete} dias ou mais com um engenheiro que tenha e-mail cadastrado${lemCfg.modo === 'teste' && !lemCfg.emailGustavo ? ' (e no modo Teste falta o seu e-mail)' : ''}.</p>`;
+  const html = `<!doctype html><meta charset="utf-8"><title>Prévia dos lembretes</title><body style="background:#fff;margin:0;padding:24px;max-width:820px">
+    <h2 style="font:700 18px Arial;margin:0 0 4px">Prévia: o que sairia se enviasse agora</h2>
+    <p style="font:13px Arial;color:#6b7280;margin:0 0 22px">${lista.length} e-mail(s) · modo ${escHtml(lemCfg.modo)}${lemCfg.modo !== 'ligado' ? ' (no modo Teste/Desligado o destinatário real aparece no assunto)' : ''}</p>${corpo}</body>`;
+  if (w) { w.document.open(); w.document.write(html); w.document.close(); }
+  else alert('O navegador bloqueou a janela da prévia. Libere pop-ups para este site.');
+}
+async function enviarLembretesAgora() {
+  if (!(await salvarLembretes(true))) return;
+  if (lemCfg.modo === 'desligado') { alert('O envio está Desligado. Escolha Teste ou Ligado primeiro.'); return; }
+  if (!lemEstado.visto) { alert('Falta instalar o script do Google (veja "Como instalar"). É ele que envia os e-mails.'); return; }
+  const para = lemCfg.modo === 'teste' ? `para você (${lemCfg.emailGustavo}), em modo Teste` : 'para os engenheiros';
+  if (!confirm(`Enviar os lembretes agora, ${para}?\n\nO script do Google envia na próxima verificação (em até 15 minutos).`)) return;
+  const { error } = await sb.rpc('admin_lembretes_enviar_agora');
+  if (error) { alert('Não consegui: ' + error.message); return; }
+  alert('✔ Combinado: sai em até 15 minutos. O resultado aparece no Histórico de envios.');
+}
+async function copiarScriptGoogle() {
+  if (!(await salvarLembretes(true))) return;
+  const cfg = window.MPH_CONFIG || {};
+  const script = `// Controle de Pagamento — lembretes por e-mail
+// Cole tudo em script.google.com, salve (💾) e execute a função "instalar" uma vez.
+// Os e-mails saem pelo Gmail desta conta. Para desligar, mude para "Desligado" no Controle.
+
+const SUPABASE_URL = '${cfg.supabaseUrl}';
+const SUPABASE_KEY = '${cfg.supabaseAnonKey}';   // chave pública (a mesma do site)
+const CODIGO = '${lemCfg.token}';                  // gerado pelo Controle; não compartilhe
+
+function instalar() {
+  ScriptApp.getProjectTriggers().forEach(t => ScriptApp.deleteTrigger(t));
+  ScriptApp.newTrigger('verificar').timeBased().everyMinutes(15).create();
+  verificar();
+  Logger.log('Instalado: vou verificar a cada 15 minutos.');
+}
+
+function chamar(funcao, corpo) {
+  const r = UrlFetchApp.fetch(SUPABASE_URL + '/rest/v1/rpc/' + funcao, {
+    method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+    headers: { apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY },
+    payload: JSON.stringify(corpo)
+  });
+  if (r.getResponseCode() >= 300) throw new Error(funcao + ': ' + r.getContentText());
+  return JSON.parse(r.getContentText() || 'null');
+}
+
+function verificar() {
+  const d = chamar('lembretes_preparar', { p_token: CODIGO });
+  if (d.erro) throw new Error('Código inválido: copie o script de novo no Controle (aba Cobrança).');
+  if (!d.enviar) return;
+  const res = [];
+  d.emails.forEach(e => {
+    try {
+      const msg = { to: e.para, subject: e.assunto, body: e.texto, htmlBody: e.html, name: 'Controle de Pagamento' };
+      if (e.cc) msg.cc = e.cc;
+      if (d.responderPara) msg.replyTo = d.responderPara;
+      MailApp.sendEmail(msg);
+      res.push({ id: e.id, ok: true });
+    } catch (err) {
+      res.push({ id: e.id, ok: false, erro: String(err) });
+    }
+  });
+  chamar('lembretes_resultado', { p_token: CODIGO, p_res: res });
+}
+`;
+  const ok = await copiarTexto(script);
+  if (ok) alert('✔ Script copiado. Agora cole no script.google.com (veja "Como instalar").');
+  else { const w = window.open('', '_blank'); if (w) { w.document.write('<pre style="white-space:pre-wrap">' + escHtml(script) + '</pre>'); w.document.close(); } }
+}
+async function novoCodigoScript() {
+  if (!confirm('Gerar um código novo? O script do Google atual para de funcionar até você colar o script novo.')) return;
+  lemCfg.token = novoToken(); await salvarConfig('lembretes', lemCfg); await copiarScriptGoogle();
+}
+
+// ============================================================
 // SALVAR NA PASTA — CONTROLE_DADOS.json ao lado do HTML
 // ============================================================
 // Os dados ficam no navegador; este arquivo é a cópia que o Claude lê.
@@ -3355,9 +3715,9 @@ const TIPO_RESP = { oc: 'Informou a OC', liberada: 'OC liberada', resolvido: 'J�
 
 async function carregarRespostas() {
   if (!sb) return;
-  const { data, error } = await sb.from('respostas').select('*').order('criado_em', { ascending: true }).limit(1000);
+  const { data, error } = await sb.from('respostas').select('*').order('criado_em', { ascending: false }).limit(3000);
   if (error) { console.warn('respostas:', error.message); return; }
-  respostas = data || [];
+  respostas = (data || []).reverse();
   atualizarBadgeResp();
 }
 const ehEng = r => r.tipo !== 'gustavo';
