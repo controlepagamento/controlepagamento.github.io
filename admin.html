@@ -3595,7 +3595,7 @@ function htmlSexta(ativos) {
   const obras = [...new Set(envios.filter(e => e.data === sextaLote).flatMap(e => (e.nfs || []).map(n => n.obra)).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
   const gmail = (window.MPH_CONFIG || {}).adminEmail || 'controlepagamentogustavo@gmail.com';
   return `<details class="cob-det cob-sexta" open><summary>📤 Seu e-mail de sexta (um por obra): como mandar para o lembrete responder nele</summary>
-    <div class="cob-muted" style="margin:8px 0 10px">Coloque <strong>${escHtml(gmail)}</strong> em <strong>Cc</strong> e use este assunto, com o nome da obra igual ao do Controle. Sem isso, o lembrete sai como e-mail novo.</div>
+    <div class="cob-muted" style="margin:8px 0 10px">Mande também para <strong>${escHtml(gmail)}</strong> (o ✉️ já coloca) e use este assunto, com o nome da obra igual ao do Controle. Sem isso, o lembrete sai como e-mail novo.</div>
     <select class="eng-input" style="min-width:0;margin-bottom:8px" onchange="sextaLote=this.value;renderCob()">${lotes.map(l => `<option value="${l}" ${l === sextaLote ? 'selected' : ''}>Envio de ${fmtDate(l)}</option>`).join('')}</select>
     <table class="cob-itens">${obras.map(o => {
       const a = assuntoSexta(o, sextaLote);
@@ -3606,7 +3606,7 @@ function htmlSexta(ativos) {
       <td><button class="btn sm" data-a="${escHtml(a)}" onclick="copiarAssunto(this)">📋 assunto</button></td>
       <td>${engs.length ? engs.map(e => escHtml(e.nome) + (e.email ? '' : ' <span style="color:var(--amber)">(sem e-mail)</span>')).join(', ') : '<span style="color:var(--amber)">nenhum engenheiro com esta obra</span>'}</td>
       <td>${para ? `<button class="btn sm" data-a="${escHtml(para)}" onclick="copiarAssunto(this)">📋 para</button>` : ''}</td>
-      <td style="white-space:nowrap"><button class="btn sm primary" data-o="${escHtml(o)}" onclick="emailSexta(this.dataset.o, true)" title="Abre o Outlook na web com Para, Cc, assunto e texto preenchidos">✉️ Abrir no Outlook</button>
+      <td style="white-space:nowrap"><button class="btn sm primary" data-o="${escHtml(o)}" onclick="emailSexta(this.dataset.o, true)" title="Abre o Outlook na web com os destinatários (engenheiros, Gmail do Controle e cópia fixa), o assunto e o texto preenchidos">✉️ Abrir no Outlook</button>
         <button class="btn sm" data-o="${escHtml(o)}" onclick="emailSexta(this.dataset.o, false, this)" title="Copia o texto formatado, com tabela, para colar no e-mail">📋 corpo</button></td></tr>`; }).join('')}</table>
     <div class="cob-muted" style="margin-top:8px">✉️ abre o e-mail pronto e já copia o texto formatado: se quiser a versão com tabela, apague o texto simples e cole com Ctrl+V. Depois é só arrastar os PDFs da pasta da obra e enviar.</div>
   </details>`;
@@ -3685,8 +3685,10 @@ async function emailSexta(obra, abrir, btn) {
     return;
   }
   const q = (k, v) => v ? `${k}=${encodeURIComponent(v)}` : '';
-  let url = 'https://outlook.office.com/mail/deeplink/compose?' + [q('to', m.para.join(';')), q('cc', m.cc.join(';')), q('subject', m.assunto), q('body', m.texto)].filter(Boolean).join('&');
-  if (url.length > 7500) url = 'https://outlook.office.com/mail/deeplink/compose?' + [q('to', m.para.join(';')), q('cc', m.cc.join(';')), q('subject', m.assunto), q('body', 'Cole aqui o texto com Ctrl+V.')].filter(Boolean).join('&');
+  // o Outlook na web ignora o Cc do link: todos vão no Para (engenheiros, Gmail do Controle e quem está na cópia fixa)
+  const todos = [...new Set([...m.para, ...m.cc])].join(',');
+  let url = 'https://outlook.office.com/mail/deeplink/compose?' + [q('to', todos), q('subject', m.assunto), q('body', m.texto)].filter(Boolean).join('&');
+  if (url.length > 7500) url = 'https://outlook.office.com/mail/deeplink/compose?' + [q('to', todos), q('subject', m.assunto), q('body', 'Cole aqui o texto com Ctrl+V.')].filter(Boolean).join('&');
   const w = window.open(url, '_blank');
   if (!w) alert('O navegador bloqueou a janela do Outlook. Libere pop-ups para este site e clique de novo.');
 }
