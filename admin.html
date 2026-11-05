@@ -3605,8 +3605,89 @@ function htmlSexta(ativos) {
       <td><code style="font-size:11.5px">${escHtml(a)}</code></td>
       <td><button class="btn sm" data-a="${escHtml(a)}" onclick="copiarAssunto(this)">📋 assunto</button></td>
       <td>${engs.length ? engs.map(e => escHtml(e.nome) + (e.email ? '' : ' <span style="color:var(--amber)">(sem e-mail)</span>')).join(', ') : '<span style="color:var(--amber)">nenhum engenheiro com esta obra</span>'}</td>
-      <td>${para ? `<button class="btn sm" data-a="${escHtml(para)}" onclick="copiarAssunto(this)">📋 para</button>` : ''}</td></tr>`; }).join('')}</table>
+      <td>${para ? `<button class="btn sm" data-a="${escHtml(para)}" onclick="copiarAssunto(this)">📋 para</button>` : ''}</td>
+      <td style="white-space:nowrap"><button class="btn sm primary" data-o="${escHtml(o)}" onclick="emailSexta(this.dataset.o, true)" title="Abre o Outlook na web com Para, Cc, assunto e texto preenchidos">✉️ Abrir no Outlook</button>
+        <button class="btn sm" data-o="${escHtml(o)}" onclick="emailSexta(this.dataset.o, false, this)" title="Copia o texto formatado, com tabela, para colar no e-mail">📋 corpo</button></td></tr>`; }).join('')}</table>
+    <div class="cob-muted" style="margin-top:8px">✉️ abre o e-mail pronto e já copia o texto formatado: se quiser a versão com tabela, apague o texto simples e cole com Ctrl+V. Depois é só arrastar os PDFs da pasta da obra e enviar.</div>
   </details>`;
+}
+
+// ---------- e-mail de sexta: monta Para, Cc, assunto e corpo de uma obra ----------
+const primeiroNome = n => String(n || '').trim().split(/\s+/)[0];
+const juntarE = l => l.length <= 1 ? (l[0] || '') : l.slice(0, -1).join(', ') + ' e ' + l.at(-1);
+const dataCurta = d => d ? fmtDate(String(d).slice(0, 10)).replace(/\/(\d{2})(\d{2})$/, '/$2') : '';
+function situacaoSexta(n) {
+  if (n.ocNegativada) return 'OC negativada: liberar o saldo' + (n.numero ? ' da OC ' + n.numero : '');
+  if (n.semOC) return 'Sem OC: informar o nº da OC';
+  if (n.faltaApropriacao) return 'Falta apropriação: apropriar a NF';
+  return '';
+}
+function montarEmailSexta(obra) {
+  const lote = sextaLote;
+  const nfs = envios.filter(e => e.data === lote).flatMap(e => e.nfs || []).filter(n => n.obra === obra)
+    .sort((a, b) => String(a.vencimento || '9').localeCompare(String(b.vencimento || '9')));
+  const engs = engenheiros.filter(e => e.ativo && e.obras.includes(obra));
+  const gmail = (window.MPH_CONFIG || {}).adminEmail || 'controlepagamentogustavo@gmail.com';
+  const eu = String(lemCfg?.emailGustavo || '').toLowerCase();
+  const separar = v => String(v || '').split(/[;,\s]+/).filter(Boolean);
+  const para = [...new Set(engs.flatMap(e => separar(e.email)))];
+  const cc = [...new Set([gmail, ...separar(lemCfg?.ccSempre)])].filter(x => x.toLowerCase() !== eu && !para.includes(x));
+  const pend = nfs.filter(pendenteNF), ok = nfs.filter(n => !pendenteNF(n));
+  const total = nfs.reduce((s, n) => s + Number(n.valor || 0), 0);
+  const titulo = String(obra).replace(/^\s*obra\s+/i, '');
+  const site = (lemCfg?.site || (location.origin + location.pathname.replace(/[^/]*$/, ''))).replace(/\/?$/, '/') + '?lote=' + lote;
+  const doc = n => `${n.tipoDoc || 'NF'} ${n.numDoc || ''}`.trim();
+  const ola = engs.length ? `Olá, ${juntarE(engs.map(e => primeiroNome(e.nome)))}.` : 'Olá.';
+  const intro = `Seguem os documentos do envio de ${fmtDate(lote)} da obra ${titulo}: ${nfs.length} documento(s), ${fmtVal(total)}.`;
+  // texto simples (vai no próprio e-mail)
+  let texto = `${ola}\n\n${intro}\n\n`;
+  if (pend.length) texto += `⚠️ PRECISAM DE AÇÃO NO CONTROLE (${pend.length}):\n` + pend.map(n => `• ${doc(n)} · ${n.fornecedor} · ${fmtVal(n.valor)}${n.vencimento ? ' · vence ' + dataCurta(n.vencimento) : ''} · ${situacaoSexta(n)}`).join('\n') + `\n\nResolva em: ${site}\n\n`;
+  else texto += '✅ Nenhuma pendência: todas as cobranças estão ok.\n\n';
+  if (ok.length) texto += `✅ JÁ ESTÃO OK (${ok.length}):\n` + ok.map(n => `• ${doc(n)} · ${n.fornecedor} · ${fmtVal(n.valor)}${n.numero ? ' · OC ' + n.numero : ''}`).join('\n') + '\n\n';
+  texto += 'Os documentos estão em anexo.\n\nAtenciosamente,';
+  // versão formatada (para colar)
+  const th = 'padding:6px 8px;text-align:left;font-size:12px;border-bottom:1px solid #d1d5db';
+  const td = 'padding:6px 8px;font-size:13px;border-bottom:1px solid #e5e7eb;vertical-align:top';
+  const linhas = (lista, comSit) => lista.map(n => `<tr><td style="${td}">${escHtml(doc(n))}</td><td style="${td}">${escHtml(n.fornecedor || '')}</td><td style="${td};text-align:right;white-space:nowrap">${fmtVal(n.valor)}</td><td style="${td};white-space:nowrap">${n.vencimento ? dataCurta(n.vencimento) : '—'}</td><td style="${td}${comSit ? ';font-weight:700;color:#b45309' : ''}">${escHtml(comSit ? situacaoSexta(n) : (n.numero ? 'OC ' + n.numero : 'ok'))}</td></tr>`).join('');
+  const cab = ult => `<tr style="background:#f3f4f6"><th style="${th}">Documento</th><th style="${th}">Fornecedor</th><th style="${th};text-align:right">Valor</th><th style="${th}">Vencimento</th><th style="${th}">${ult}</th></tr>`;
+  let html = `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#111827"><p>${escHtml(ola)}</p><p>${escHtml(intro)}</p>`;
+  if (pend.length) html += `<div style="border:2px solid #f59e0b;background:#fffbeb;border-radius:8px;padding:10px 12px;margin:12px 0"><div style="font-weight:700;color:#b45309;font-size:15px;margin-bottom:6px">⚠️ Precisam de ação no Controle de Pagamento (${pend.length})</div><table cellspacing="0" cellpadding="0" style="border-collapse:collapse;width:100%;background:#fff">${cab('O que falta')}${linhas(pend, true)}</table><p style="margin:10px 0 0"><a href="${escHtml(site)}" style="background:#111827;color:#fff;text-decoration:none;padding:8px 14px;border-radius:6px;font-weight:700;display:inline-block">Resolver no Controle</a></p></div>`;
+  else html += '<p style="color:#15803d;font-weight:700">✅ Nenhuma pendência: todas as cobranças estão ok.</p>';
+  if (ok.length) html += `<div style="margin:12px 0"><div style="font-weight:700;color:#15803d;margin-bottom:6px">✅ Já estão ok (${ok.length})</div><table cellspacing="0" cellpadding="0" style="border-collapse:collapse;width:100%">${cab('OC')}${linhas(ok, false)}</table></div>`;
+  html += '<p>Os documentos estão em anexo.</p><p>Atenciosamente,</p></div>';
+  return { para, cc, assunto: assuntoSexta(obra, lote), texto, html, semEng: !engs.length, semEmail: engs.length && !para.length };
+}
+async function copiarRico(html, texto) {
+  try {
+    if (window.ClipboardItem) {
+      await navigator.clipboard.write([new ClipboardItem({ 'text/html': new Blob([html], { type: 'text/html' }), 'text/plain': new Blob([texto], { type: 'text/plain' }) })]);
+      return true;
+    }
+  } catch (e) {}
+  const div = document.createElement('div');
+  div.contentEditable = 'true'; div.innerHTML = html;
+  div.style.cssText = 'position:fixed;left:-9999px;top:0';
+  document.body.appendChild(div);
+  const r = document.createRange(); r.selectNodeContents(div);
+  const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
+  let ok = false; try { ok = document.execCommand('copy'); } catch (e) {}
+  sel.removeAllRanges(); div.remove();
+  return ok || copiarTexto(texto);
+}
+async function emailSexta(obra, abrir, btn) {
+  const m = montarEmailSexta(obra);
+  if (m.semEng && !confirm(`Nenhum engenheiro tem a obra ${obra} marcada. Montar o e-mail mesmo assim (sem destinatário)?`)) return;
+  if (m.semEmail && abrir && !confirm(`Os engenheiros da obra ${obra} estão sem e-mail cadastrado. Abrir mesmo assim (sem destinatário)?`)) return;
+  const copiou = await copiarRico(m.html, m.texto);
+  if (!abrir) {
+    if (btn) { const t = btn.textContent; btn.textContent = copiou ? '✓ copiado' : 'não copiou'; setTimeout(() => { btn.textContent = t; }, 1300); }
+    return;
+  }
+  const q = (k, v) => v ? `${k}=${encodeURIComponent(v)}` : '';
+  let url = 'https://outlook.office.com/mail/deeplink/compose?' + [q('to', m.para.join(';')), q('cc', m.cc.join(';')), q('subject', m.assunto), q('body', m.texto)].filter(Boolean).join('&');
+  if (url.length > 7500) url = 'https://outlook.office.com/mail/deeplink/compose?' + [q('to', m.para.join(';')), q('cc', m.cc.join(';')), q('subject', m.assunto), q('body', 'Cole aqui o texto com Ctrl+V.')].filter(Boolean).join('&');
+  const w = window.open(url, '_blank');
+  if (!w) alert('O navegador bloqueou a janela do Outlook. Libere pop-ups para este site e clique de novo.');
 }
 
 function htmlLembretes(ativos) {
