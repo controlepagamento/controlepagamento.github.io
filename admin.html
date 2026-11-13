@@ -6,7 +6,7 @@
 <meta name="robots" content="noindex, nofollow">
 <meta name="referrer" content="same-origin">
 <title>Controle de Pagamento</title>
-<link rel="icon" href="logo.png">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2064%2064%22%3E%3Crect%20width%3D%2264%22%20height%3D%2264%22%20rx%3D%2216%22%20fill%3D%22%230F172A%22/%3E%3Cg%20transform%3D%22translate%289%209%29%20scale%280.72%29%22%3E%3Cpath%20d%3D%22M52%2032a20%2020%200%201%201-6-14.3%22%20fill%3D%22none%22%20stroke%3D%22%2360A5FA%22%20stroke-width%3D%226.5%22%20stroke-linecap%3D%22round%22/%3E%3Cpath%20d%3D%22M47%207.5v10.5h-10.5%22%20fill%3D%22none%22%20stroke%3D%22%2360A5FA%22%20stroke-width%3D%226.5%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22/%3E%3Ccircle%20cx%3D%2232%22%20cy%3D%2232%22%20r%3D%228.5%22%20fill%3D%22%23FFFFFF%22/%3E%3C/g%3E%3C/svg%3E">
 <script>
 // tema salvo neste aparelho (ou o do sistema), aplicado antes de desenhar a página
 (function(){var t='dark';try{t=localStorage.getItem('cp_tema')||'light';}catch(e){}document.documentElement.setAttribute('data-theme',t);})();
@@ -349,20 +349,12 @@ input:focus,select:focus,textarea:focus,.pin-input:focus{border-color:var(--ui) 
 .tema-btn:hover{border-color:var(--border-hover)}
 .tema-flutuante{position:fixed;top:14px;right:14px;z-index:600}
 
-/* logo */
-.logo-foto{width:42px;height:42px;border-radius:50%;flex-shrink:0;position:relative;overflow:hidden;display:grid;place-items:center;
-  background:linear-gradient(135deg,#475569,#94a3b8);
-  box-shadow:0 0 0 2.5px rgba(255,255,255,0.9),0 6px 18px rgba(0,0,0,0.30);
-  transform:rotate(-7deg);transition:transform .25s cubic-bezier(.34,1.56,.64,1)}
-.logo-foto:hover{transform:rotate(8deg) scale(1.08)}
-.logo-foto img{width:100%;height:100%;object-fit:cover;display:block}
-.logo-foto span{display:none;font-weight:700;font-size:14px;color:#fff;letter-spacing:.02em}
-.logo-foto.sem-foto img{display:none}
-.logo-foto.sem-foto span{display:block}
-.logo-foto.grande{width:92px;height:92px;align-self:center;animation:balanca 3.2s ease-in-out infinite}
-.logo-foto.grande span{font-size:28px}
-@keyframes balanca{0%,100%{transform:rotate(-7deg)}50%{transform:rotate(6deg) translateY(-3px)}}
-@media (prefers-reduced-motion:reduce){.logo-foto.grande{animation:none}}
+/* logo: Ciclo da semana */
+.logo-foto{width:42px;height:42px;border-radius:12px;flex-shrink:0;display:grid;place-items:center;
+  box-shadow:0 2px 8px rgba(15,23,42,0.18);transition:transform .25s ease}
+.logo-foto:hover{transform:rotate(-12deg)}
+.logo-foto svg{width:100%;height:100%;display:block}
+.logo-foto.grande{width:84px;height:84px;border-radius:22px;align-self:center}
 
 /* ===== VIDRO DE VERDADE: formas no fundo + painéis translúcidos ===== */
 :root,:root[data-theme="dark"]{
@@ -533,7 +525,7 @@ input::placeholder,textarea::placeholder{color:var(--text-dim)}
 <!-- ABRINDO (a entrada por PIN fica na página inicial) -->
 <div class="login-bg open" id="loginBg">
   <div class="login-card">
-    <div class="logo-foto grande"><img src="logo.png" alt="" onerror="this.parentNode.classList.add('sem-foto')"><span>CP</span></div>
+    <div class="logo-foto grande"><svg aria-hidden="true" viewBox="0 0 64 64"><rect width="64" height="64" rx="16" fill="#0F172A"/><g transform="translate(9 9) scale(0.72)"><path d="M52 32a20 20 0 1 1-6-14.3" fill="none" stroke="#60A5FA" stroke-width="6.5" stroke-linecap="round"/><path d="M47 7.5v10.5h-10.5" fill="none" stroke="#60A5FA" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="32" cy="32" r="8.5" fill="#FFFFFF"/></g></svg></div>
     <h1>Controle de Pagamento</h1>
     <p id="lMsg" style="margin-top:0">Abrindo…</p>
     <a href="./" class="login-link">Voltar para a entrada por PIN</a>
@@ -547,7 +539,7 @@ input::placeholder,textarea::placeholder{color:var(--text-dim)}
 <!-- TOPBAR -->
 <div class="topbar">
   <div class="logo">
-    <div class="logo-foto"><img src="logo.png" alt="" onerror="this.parentNode.classList.add('sem-foto')"><span>CP</span></div>
+    <div class="logo-foto"><svg aria-hidden="true" viewBox="0 0 64 64"><rect width="64" height="64" rx="16" fill="#0F172A"/><g transform="translate(9 9) scale(0.72)"><path d="M52 32a20 20 0 1 1-6-14.3" fill="none" stroke="#60A5FA" stroke-width="6.5" stroke-linecap="round"/><path d="M47 7.5v10.5h-10.5" fill="none" stroke="#60A5FA" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="32" cy="32" r="8.5" fill="#FFFFFF"/></g></svg></div>
     <div>
       <div class="logo-title">Controle de Pagamento</div>
       <div class="logo-sub">Gustavo Ferreira</div>
@@ -558,6 +550,7 @@ input::placeholder,textarea::placeholder{color:var(--text-dim)}
     <span class="nuvem" id="nuvemStatus" onclick="if(this.classList.contains('erro')) sincronizar()">☁️ Conectando…</span>
     <button class="btn" onclick="abrirImportacao()" title="Importar os lançamentos da semana (arquivo gerado pelo Claude) ou migrar o CONTROLE_DADOS.json">📥 Importar arquivo</button>
     <button class="btn" onclick="anexarPendentes()" title="Anexa o PDF da NF de cada cobrança em Precisa resolver, para o engenheiro abrir">📎 Anexar NFs pendentes</button>
+    <button class="btn" onclick="trocarPastaSemanas()" title="Escolher outra pasta para procurar os PDFs (o ideal é a pasta Semanas, com todas as semanas dentro)">📁</button>
     <button class="btn" onclick="salvarNaPasta()" title="Grava CONTROLE_DADOS.json na pasta do Controle (escolha a pasta onde está este HTML)">💾 Salvar na pasta</button>
     <button class="btn" onclick="openRetorno()" title="Marcar no Controle o que o script vinculou no sistema">↩ Colar retorno</button>
     <button class="btn outline-red" onclick="gerarPDF()">📄 Relatório PDF</button>
@@ -1212,19 +1205,32 @@ async function resolverPastaObra(raiz, caminho) {
     try { dir = await dir.getDirectoryHandle(nome); }
     catch (e) { throw new Error(`pasta "${nome}" não encontrada (confira o caminho ou a sincronização do OneDrive)`); }
   }
-  if (!/^18\b/.test(dir.name.trim())) {
-    let achou = null;
-    for await (const [nome, h] of dir.entries()) {
-      if (h.kind === 'directory' && /^18\s*-/.test(nome.trim())) { achou = h; break; }
+  // o caminho já passa pela pasta 18 (às vezes até o ano: 18 - Notas Fiscais\2026): usa como está
+  if (s.slice(i + 1).some(x => /^18\b/.test(x.trim())) || /^18\b/.test(dir.name.trim())) return dir;
+  // parou antes da 18: procura a pasta "18 - ..." até 3 níveis abaixo
+  let nivel = [dir];
+  for (let d = 0; d < 3; d++) {
+    const prox = [];
+    for (const p of nivel) {
+      for await (const [nome, h] of p.entries()) {
+        if (h.kind !== 'directory') continue;
+        if (/^18\s*-/.test(nome.trim())) return h;
+        prox.push(h);
+      }
     }
-    if (!achou) throw new Error('pasta "18 - Notas Fiscais" não encontrada no caminho');
-    dir = achou;
+    nivel = prox.slice(0, 300);
   }
-  return dir;
+  throw new Error('pasta "18 - Notas Fiscais" não encontrada no caminho (procurei até 3 níveis abaixo)');
 }
 
 async function pastaDoMes(dir18, dataISO) {
-  const m = Number(String(dataISO).slice(5, 7));
+  const m = Number(String(dataISO).slice(5, 7)), ano = String(dataISO).slice(0, 4);
+  // pasta 18 organizada por ano (18 - Notas Fiscais\2026): entra no ano do envio
+  if (/^18\b/.test(dir18.name.trim())) {
+    for await (const [nome, h] of dir18.entries()) {
+      if (h.kind === 'directory' && nome.trim() === ano) { dir18 = h; break; }
+    }
+  }
   const re = new RegExp(`^0?${m}\\s*-`);
   for await (const [nome, h] of dir18.entries()) {
     if (h.kind === 'directory' && re.test(nome.trim())) return h;
@@ -2775,8 +2781,12 @@ function setPasta(input) {
 function statusPasta(caminho) {
   const s = segmentos(caminho);
   if (!s.length) return '<span class="badge alerta">sem caminho</span>';
-  if (/^18\b/.test(s[s.length - 1])) return '<span class="badge pago">✓ ok</span>';
-  return '<span class="badge azul" title="O caminho não termina em 18 - Notas Fiscais. Na hora de arquivar, o script procura essa pasta dentro dele.">✓ procura a pasta 18</span>';
+  const k = s.findIndex(x => /^18\b/.test(x.trim()));
+  if (k >= 0) {
+    const resto = s.slice(k + 1).join(' \\ ');
+    return `<span class="badge pago" title="Arquiva em: ${escHtml(s.slice(k).join('\\'))}">✓ ok${resto ? ' · ' + escHtml(resto) : ''}</span>`;
+  }
+  return '<span class="badge azul" title="O caminho para antes da pasta 18 - Notas Fiscais. Na hora de arquivar, o script procura essa pasta até 3 níveis abaixo.">✓ procura a pasta 18</span>';
 }
 
 function renderPastas() {
@@ -4199,8 +4209,10 @@ async function subirAnexo(nfId, file) {
 
 // botão "📎 Anexar NFs pendentes": acha e envia sozinho os PDFs das cobranças em "Precisa resolver"
 // pasta "Semanas" lembrada neste computador: das próximas vezes é só clicar em "Permitir"
+const pastaDeUmaSemana = nome => /^\d{1,2}[-_. ]\d{1,2}[-_. ]\d{2,4}$/.test(String(nome || '').trim());
 async function pastaSemanas() {
   let dir = await idbGet('semanas');
+  if (dir && pastaDeUmaSemana(dir.name)) dir = null;   // lembrou uma semana só (ex.: 06-11-26): pede a "Semanas" de novo
   if (dir) {
     try {
       let p = await dir.queryPermission({ mode: 'read' });
@@ -4210,7 +4222,7 @@ async function pastaSemanas() {
   }
   alert('Escolha a pasta "Semanas" (a que tem todas as semanas dentro).\nO Controle vai lembrar dela neste computador.');
   dir = await showDirectoryPicker({ id: 'mph-semanas', mode: 'read' });
-  await idbSet('semanas', dir);
+  if (!pastaDeUmaSemana(dir.name)) await idbSet('semanas', dir);   // pasta de uma semana só vale só desta vez
   return dir;
 }
 async function trocarPastaSemanas() { await idbSet('semanas', null); anexarPendentes(); }
@@ -4242,7 +4254,8 @@ async function anexarPendentes() {
   statusNuvem('ok');
   renderEnvios();
   if (!arquivos.length) { await idbSet('semanas', null); alert(`A pasta "${dir.name}" não tem nenhum PDF. Clique em 📎 Anexar NFs pendentes de novo e escolha a pasta "Semanas".`); return; }
-  alert(`📎 ${ok.length} PDF(s) anexado(s) da pasta "${dir.name}".` + (falhas.length ? `\n\nNão anexados (use o 📎 na linha para escolher o PDF à mão):\n• ${falhas.slice(0, 15).join('\n• ')}${falhas.length > 15 ? '\n…' : ''}` : ''));
+  alert(`📎 ${ok.length} PDF(s) anexado(s) da pasta "${dir.name}".` + (falhas.length ? `\n\nNão anexados (use o 📎 na linha para escolher o PDF à mão):\n• ${falhas.slice(0, 15).join('\n• ')}${falhas.length > 15 ? '\n…' : ''}` : '')
+    + (falhas.length && !/^semanas$/i.test(dir.name.trim()) ? `\n\nDica: os PDFs podem estar em outra pasta. Clique no 📁 ao lado do botão e escolha a pasta "Semanas".` : ''));
 }
 
 // 📎 na linha: escolher o PDF à mão
