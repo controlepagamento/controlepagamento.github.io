@@ -1196,6 +1196,7 @@ function acharDocs(todos, it) {
 
 // ---- PASTAS DAS OBRAS --------------------------------------
 async function resolverPastaObra(raiz, caminho) {
+  if (raiz && raiz.remota) { const v = await pedirPastas('resolver', { caminho }); return { remota: true, token: v.token, name: v.name }; }
   const s = segmentos(caminho);
   if (!s.length) throw new Error('caminho da obra não cadastrado na aba Pastas das obras');
   const i = s.findIndex(x => norm(x) === norm(raiz.name));
@@ -1224,6 +1225,7 @@ async function resolverPastaObra(raiz, caminho) {
 }
 
 async function pastaDoMes(dir18, dataISO) {
+  if (dir18 && dir18.remota) { const v = await pedirPastas('mes', { token: dir18.token, data: dataISO }); return { remota: true, token: v.token, name: v.name }; }
   const m = Number(String(dataISO).slice(5, 7)), ano = String(dataISO).slice(0, 4);
   // pasta 18 organizada por ano (18 - Notas Fiscais\2026): entra no ano do envio
   if (/^18\b/.test(dir18.name.trim())) {
@@ -1239,6 +1241,7 @@ async function pastaDoMes(dir18, dataISO) {
 }
 
 async function copiar(arq, destino) {
+  if (destino && destino.remota) { const v = await pedirPastas('copiar', { token: destino.token, nome: arq.nome, file: await arq.handle.getFile() }); return v.copiou; }
   try { await destino.getFileHandle(arq.nome); return false; } catch (e) { /* não existe: copia */ }
   const file = await arq.handle.getFile();
   const h = await destino.getFileHandle(arq.nome, { create: true });
@@ -1380,6 +1383,36 @@ fechar.onclick = () => painel.remove();
 const titulo = el('b', `${SO_ARQUIVAR ? 'Arquivar NFs nas obras' : 'Vincular NFs'} — envio ${paraBR(DADOS.envio.data)}`, 'font-size:15px');
 const status = el('p', `${LISTA.length} lançamento(s). ${precisaArquivar ? 'Escolha as duas pastas:' : 'Escolha a pasta da semana (nenhuma obra deste envio é arquivada):'}`, 'margin:8px 0');
 const nomeRaiz = DADOS.raiz || 'OneDrive - MPH Engenharia';
+// ---- JANELA DE PASTAS DO CONTROLE (quando o script roda no sistema da MpH) ----
+const SITE_CTRL = DADOS.site || 'https://controlepagamento.github.io/';
+const ORIGEM_CTRL = new URL(SITE_CTRL).origin;
+const PASTAS_REMOTAS = location.origin !== ORIGEM_CTRL;
+let janelaPastas = null, seqPastas = 0;
+const pedidosPastas = {}, aoReceberPastas = {};
+window.addEventListener('message', ev => {
+  if (ev.origin !== ORIGEM_CTRL || !janelaPastas || ev.source !== janelaPastas) return;
+  const d = ev.data || {};
+  if (d.tipo === 'mph-pastas-pronta') {
+    janelaPastas.postMessage({ tipo: 'mph-config', precisaArquivar, nomeRaiz: DADOS.raiz || '', envioBR: paraBR(DADOS.envio.data) }, ORIGEM_CTRL);
+  } else if (d.tipo === 'mph-res') {
+    const p = pedidosPastas[d.id];
+    if (p) { delete pedidosPastas[d.id]; d.ok ? p.ok(d.valor) : p.erro(new Error(d.erro)); }
+  } else if (aoReceberPastas[d.tipo]) aoReceberPastas[d.tipo](d);
+});
+function abrirJanelaPastas() {
+  if (janelaPastas && !janelaPastas.closed) { janelaPastas.focus(); return; }
+  janelaPastas = window.open(SITE_CTRL + 'pastas.html', 'mphPastas', 'width=560,height=680');
+  if (!janelaPastas) alert('O navegador bloqueou a janela de pastas do Controle. Libere pop-ups para este site (ícone na barra de endereço) e clique de novo.');
+}
+function pedirPastas(op, dados) {
+  return new Promise((ok, erro) => {
+    if (!janelaPastas || janelaPastas.closed) return erro(new Error('a janela de pastas do Controle foi fechada (deixe-a aberta até terminar)'));
+    const id = ++seqPastas;
+    pedidosPastas[id] = { ok, erro };
+    janelaPastas.postMessage({ tipo: 'mph-req', id, op, ...dados }, ORIGEM_CTRL);
+    setTimeout(() => { if (pedidosPastas[id]) { delete pedidosPastas[id]; erro(new Error('a janela de pastas do Controle não respondeu')); } }, 180000);
+  });
+}
 const btnSemana = el('button', '1. Pasta da semana', BTN);
 const btnRaiz = el('button', `2. Pasta "${nomeRaiz}"`, BTN);
 const escolhas = el('div', null, 'margin:4px 0 8px');
@@ -1388,10 +1421,22 @@ if (precisaArquivar) escolhas.append(btnRaiz);
 painel.append(fechar, titulo, status, escolhas);
 document.body.append(painel);
 
-let pastaSemana = null, raiz = null;
+let pastaSemana = null, raiz = null, arquivosSemana = null;
 await new Promise(pronto => {
   const marcar = (btn, txt) => { btn.textContent = txt; btn.style.background = '#e8f7f1'; btn.style.color = '#0b6b50'; };
-  const conferir = () => { if (pastaSemana && (raiz || !precisaArquivar)) pronto(); };
+  const conferir = () => { if ((pastaSemana || arquivosSemana) && (raiz || !precisaArquivar)) pronto(); };
+  if (PASTAS_REMOTAS) {
+    // o Chrome não deixa este site abrir pastas: escolhe numa janela do Controle, que manda os arquivos para cá
+    status.textContent += ' Os botões abrem uma janela do Controle para escolher as pastas.';
+    aoReceberPastas['mph-semana'] = d => {
+      arquivosSemana = d.arquivos.map(a => ({ nome: a.nome, pastas: a.pastas, handle: { getFile: async () => a.file } }));
+      marcar(btnSemana, `✔ ${d.nome} (${arquivosSemana.length} PDFs)`);
+      conferir();
+    };
+    aoReceberPastas['mph-raiz'] = d => { raiz = { remota: true, name: d.nome, token: d.token }; marcar(btnRaiz, '✔ ' + d.nome); conferir(); };
+    btnSemana.onclick = btnRaiz.onclick = abrirJanelaPastas;
+    return;
+  }
   btnSemana.onclick = async () => {
     try {
       pastaSemana = await showDirectoryPicker({ id: 'mph-semana', mode: 'read' });
@@ -1413,7 +1458,7 @@ await new Promise(pronto => {
 btnSemana.disabled = btnRaiz.disabled = true;
 
 status.textContent = 'Lendo a pasta da semana...';
-const arquivos = await listarPDFs(pastaSemana);
+const arquivos = arquivosSemana || await listarPDFs(pastaSemana);
 status.textContent = SO_ARQUIVAR ? `${arquivos.length} PDF(s) na pasta. Conferindo os arquivos...` : `${arquivos.length} PDF(s) na pasta. Procurando as OCs no sistema (uma consulta por obra)...`;
 
 // ---- CONFERÊNCIA (não grava nada) --------------------------
@@ -2920,6 +2965,7 @@ function vincularNoSistema(envioId) {
   const raiz = raizComum(obras.filter(o => !semPasta.includes(o) && !semArquivo[o]));
   const dados = {
     envio: { id: envio.id, data: envio.data },
+    site: location.origin + location.pathname.replace(/[^/]*$/, ''),
     raiz: segmentos(raiz).pop() || '',
     pastas: Object.fromEntries(obras.map(o => [o, semArquivo[o] ? '' : (pastas[o] || '')])),
     naoArquivar,
@@ -2954,7 +3000,7 @@ function vincularNoSistema(envioId) {
       <li>Aperte <strong>F12</strong>, vá em <strong>Console</strong>, cole (Ctrl+V) e aperte <strong>Enter</strong>.</li>
       <li>${naoArquivar.length === obras.length
         ? 'No painel, escolha a <strong>pasta da semana</strong> (nenhuma obra deste envio é arquivada).'
-        : `No painel, escolha a <strong>pasta da semana</strong> e a pasta <strong>${escHtml(dados.raiz || 'OneDrive - MPH Engenharia')}</strong>.`}</li>
+        : `No painel, clique em <strong>1. Pasta da semana</strong>: abre uma janela do Controle para escolher a <strong>pasta da semana</strong> e a pasta <strong>${escHtml(dados.raiz || 'OneDrive - MPH Engenharia')}</strong> (na primeira vez, libere os pop-ups do site da MpH). Deixe essa janela aberta até o vínculo terminar.`}</li>
       <li>Confira a prévia (OC → Pedido, fornecedor e cliente) e clique em <strong>Vincular</strong>.</li>
       <li>No fim, clique em <strong>📋 Copiar retorno</strong> e cole aqui em <strong>↩ Colar retorno</strong>.</li>
     </ol>`;
@@ -2999,6 +3045,7 @@ function arquivarPendentes(envioId) {
   const dados = {
     modo: 'arquivar',
     envio: { id: envio.id, data: envio.data },
+    site: location.origin + location.pathname.replace(/[^/]*$/, ''),
     raiz: segmentos(raizComum(obras)).pop() || '',
     pastas: Object.fromEntries(obras.map(o => [o, pastas[o] || ''])),
     naoArquivar: [],

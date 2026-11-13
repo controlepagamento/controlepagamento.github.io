@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Pastas do vínculo · Controle de Pagamento</title>
+<style>
+  :root { --ink: #0f172a; --muted: #475569; --line: #e2e8f0; --ok: #0b6b50; --okbg: #e8f7f1; --btn: #10a37f; --warn: #b45309; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; color: var(--ink); background: #f8fafc; }
+  main { max-width: 520px; margin: 0 auto; padding: 22px 20px 28px; }
+  h1 { font-size: 17px; margin: 0 0 4px; display: flex; align-items: center; gap: 10px; }
+  h1 svg { width: 30px; height: 30px; flex: none; }
+  p { margin: 6px 0; font-size: 14px; line-height: 1.45; color: var(--muted); }
+  .passo { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin-top: 14px; }
+  .passo b { color: var(--ink); }
+  button { background: var(--btn); color: #fff; border: 0; border-radius: 8px; padding: 10px 16px; font-weight: 700; font-size: 14px; cursor: pointer; margin-top: 8px; }
+  button:disabled { opacity: .5; cursor: default; }
+  .feito { background: var(--okbg); color: var(--ok); }
+  #status { margin-top: 16px; font-size: 13.5px; color: var(--ink); white-space: pre-line; }
+  #log { margin-top: 10px; font-size: 12.5px; color: var(--muted); max-height: 180px; overflow: auto; white-space: pre-line; }
+  .aviso { color: var(--warn); font-weight: 600; }
+</style>
+</head>
+<body>
+<main>
+  <h1><svg viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#0F172A"/><g transform="translate(9 9) scale(0.72)"><path d="M52 32a20 20 0 1 1-6-14.3" fill="none" stroke="#60A5FA" stroke-width="6.5" stroke-linecap="round"/><path d="M47 7.5v10.5h-10.5" fill="none" stroke="#60A5FA" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="32" cy="32" r="8.5" fill="#FFFFFF"/></g></svg>Pastas do vínculo</h1>
+  <p id="sub">Aguardando o painel do vínculo no sistema da MpH…</p>
+
+  <div class="passo">
+    <b>1. Pasta da semana</b>
+    <p>A pasta com os PDFs desta sexta (ex.: 13-11-26).</p>
+    <button id="bSemana" disabled>Escolher a pasta da semana</button>
+  </div>
+
+  <div class="passo" id="passoRaiz">
+    <b>2. Pasta <span id="nomeRaiz">OneDrive - MPH Engenharia</span></b>
+    <p>Onde ficam as pastas das obras. É nela que as NFs são arquivadas depois do vínculo.</p>
+    <button id="bRaiz" disabled>Escolher a pasta</button>
+  </div>
+
+  <div id="status"></div>
+  <div id="log"></div>
+</main>
+<script>
+(() => {
+  // só conversa com o sistema da MpH (e com o próprio Controle)
+  const PERMITIDAS = ['https://novo.sistemamphengenharia.com', location.origin];
+  const $ = id => document.getElementById(id);
+  const statusEl = $('status'), logEl = $('log');
+  const status = t => { statusEl.textContent = t; };
+  const log = t => { logEl.textContent = (logEl.textContent ? logEl.textContent + '\n' : '') + t; logEl.scrollTop = logEl.scrollHeight; };
+
+  let origem = null, cfg = null, raiz = null, seq = 0;
+  const handles = {};   // token → pasta (para o vínculo pedir arquivamento)
+  const guardar = h => { const t = 'p' + (++seq); handles[t] = h; return t; };
+  const enviar = msg => { if (window.opener && origem) window.opener.postMessage(msg, origem); };
+
+  const norm = s => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/\s+/g, ' ').trim();
+  const segmentos = p => String(p || '').trim().replace(/^["']|["']$/g, '').split(/[\\/]+/).map(s => s.trim()).filter(Boolean);
+  const MESES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+
+  async function listarPDFs(dir, pastas = []) {
+    const out = [];
+    for await (const [nome, h] of dir.entries()) {
+      if (h.kind === 'directory') out.push(...await listarPDFs(h, [...pastas, nome]));
+      else if (/\.pdf$/i.test(nome)) out.push({ nome, pastas, file: await h.getFile() });
+    }
+    return out;
+  }
+
+  async function resolverPastaObra(caminho) {
+    const s = segmentos(caminho);
+    if (!s.length) throw new Error('caminho da obra não cadastrado na aba Pastas das obras');
+    const i = s.findIndex(x => norm(x) === norm(raiz.name));
+    if (i < 0) throw new Error(`o caminho cadastrado não passa pela pasta selecionada ("${raiz.name}")`);
+    let dir = raiz;
+    for (const nome of s.slice(i + 1)) {
+      try { dir = await dir.getDirectoryHandle(nome); }
+      catch (e) { throw new Error(`pasta "${nome}" não encontrada (confira o caminho ou a sincronização do OneDrive)`); }
+    }
+    if (s.slice(i + 1).some(x => /^18\b/.test(x.trim())) || /^18\b/.test(dir.name.trim())) return dir;
+    let nivel = [dir];
+    for (let d = 0; d < 3; d++) {
+      const prox = [];
+      for (const p of nivel) {
+        for await (const [nome, h] of p.entries()) {
+          if (h.kind !== 'directory') continue;
+          if (/^18\s*-/.test(nome.trim())) return h;
+          prox.push(h);
+        }
+      }
+      nivel = prox.slice(0, 300);
+    }
+    throw new Error('pasta "18 - Notas Fiscais" não encontrada no caminho (procurei até 3 níveis abaixo)');
+  }
+
+  async function pastaDoMes(dir18, dataISO) {
+    const m = Number(String(dataISO).slice(5, 7)), ano = String(dataISO).slice(0, 4);
+    if (/^18\b/.test(dir18.name.trim())) {
+      for await (const [nome, h] of dir18.entries()) {
+        if (h.kind === 'directory' && nome.trim() === ano) { dir18 = h; break; }
+      }
+    }
+    const re = new RegExp(`^0?${m}\\s*-`);
+    for await (const [nome, h] of dir18.entries()) {
+      if (h.kind === 'directory' && re.test(nome.trim())) return h;
+    }
+    return dir18.getDirectoryHandle(`${m} - ${MESES[m - 1]}`, { create: true });
+  }
+
+  async function copiar(destino, nome, file) {
+    try { await destino.getFileHandle(nome); return false; } catch (e) { /* não existe: copia */ }
+    const h = await destino.getFileHandle(nome, { create: true });
+    const w = await h.createWritable();
+    await w.write(file);
+    await w.close();
+    return true;
+  }
+
+  const marcar = (btn, txt) => { btn.textContent = txt; btn.classList.add('feito'); };
+  const escolher = async modo => {
+    try { return await showDirectoryPicker({ id: modo === 'read' ? 'mph-semana' : 'mph-raiz', mode: modo }); }
+    catch (e) {
+      if (e.name === 'AbortError') status('Escolha cancelada. Se você escolheu a pasta e mesmo assim apareceu isto, o Chrome bloqueou o acesso: confira as permissões de arquivos deste site.');
+      else status('Não consegui abrir a pasta: ' + e.message);
+      return null;
+    }
+  };
+
+  $('bSemana').onclick = async () => {
+    const dir = await escolher('read');
+    if (!dir) return;
+    status(`Lendo os PDFs de "${dir.name}"…`);
+    try {
+      const arquivos = await listarPDFs(dir);
+      enviar({ tipo: 'mph-semana', nome: dir.name, arquivos });
+      marcar($('bSemana'), `✔ ${dir.name} (${arquivos.length} PDFs)`);
+      status(cfg && cfg.precisaArquivar && !raiz ? 'Agora escolha a pasta do passo 2.' : 'Pronto. Volte para a aba do sistema da MpH. Deixe esta janela aberta até o vínculo terminar.');
+    } catch (e) { status('Erro ao ler a pasta: ' + e.message); }
+  };
+
+  $('bRaiz').onclick = async () => {
+    const dir = await escolher('readwrite');
+    if (!dir) return;
+    if (cfg && cfg.nomeRaiz && norm(dir.name) !== norm(cfg.nomeRaiz) &&
+        !confirm(`Você escolheu "${dir.name}", mas os caminhos da aba Pastas das obras partem de "${cfg.nomeRaiz}". Usar mesmo assim?`)) return;
+    raiz = dir;
+    enviar({ tipo: 'mph-raiz', nome: dir.name, token: guardar(dir) });
+    marcar($('bRaiz'), '✔ ' + dir.name);
+    status($('bSemana').classList.contains('feito') ? 'Pronto. Volte para a aba do sistema da MpH. Deixe esta janela aberta até o vínculo terminar.' : 'Agora escolha a pasta do passo 1.');
+  };
+
+  window.addEventListener('message', async ev => {
+    if (!PERMITIDAS.includes(ev.origin) || ev.source !== window.opener) return;
+    const d = ev.data || {};
+    if (d.tipo === 'mph-config') {
+      origem = ev.origin; cfg = d;
+      $('sub').textContent = `Vínculo do envio ${d.envioBR || ''}: escolha ${d.precisaArquivar ? 'as duas pastas' : 'a pasta da semana'}.`;
+      $('nomeRaiz').textContent = d.nomeRaiz || 'OneDrive - MPH Engenharia';
+      $('passoRaiz').style.display = d.precisaArquivar ? '' : 'none';
+      $('bSemana').disabled = $('bRaiz').disabled = false;
+      return;
+    }
+    if (d.tipo !== 'mph-req' || ev.origin !== origem) return;
+    const responder = (ok, valor) => enviar({ tipo: 'mph-res', id: d.id, ok, ...(ok ? { valor } : { erro: valor }) });
+    try {
+      if (!raiz) throw new Error('a pasta do passo 2 não foi escolhida nesta janela');
+      if (d.op === 'resolver') {
+        const h = await resolverPastaObra(d.caminho);
+        responder(true, { token: guardar(h), name: h.name });
+      } else if (d.op === 'mes') {
+        const h = await pastaDoMes(handles[d.token], d.data);
+        responder(true, { token: guardar(h), name: h.name });
+      } else if (d.op === 'copiar') {
+        const copiou = await copiar(handles[d.token], d.nome, d.file);
+        if (copiou) log('📁 ' + d.nome);
+        responder(true, { copiou });
+      } else throw new Error('pedido desconhecido');
+    } catch (e) { responder(false, e.message); }
+  });
+
+  if (!window.opener) { $('sub').innerHTML = '<span class="aviso">Abra esta janela pelo painel do vínculo, no sistema da MpH.</span>'; return; }
+  // avisa o painel que a janela abriu (sem dados); ele responde com a configuração
+  window.opener.postMessage({ tipo: 'mph-pastas-pronta' }, '*');
+})();
+</script>
+</body>
+</html>
