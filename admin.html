@@ -223,6 +223,15 @@ body.bloqueado .app{display:none}
 .nuvem{font-size:12px;color:var(--text-muted);white-space:nowrap}
 .nuvem.ok{color:var(--green)}
 .nuvem.erro{color:var(--accent);cursor:pointer}
+.espaco-sel{max-width:210px;font-weight:600}
+.faixa-espaco{margin:.8rem 2rem 0;padding:.6rem 1rem;border-radius:10px;background:var(--amber-dim);color:var(--amber);font-size:13px;font-weight:600;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.faixa-espaco .btn{margin-left:auto}
+.so-lider{}
+body.comprador .so-lider{display:none!important}
+.comp-tbl td{vertical-align:middle}
+.comp-passos{font-size:12.5px;color:var(--text-muted);line-height:1.55;margin:10px 0 0}
+.comp-passos ol{margin:4px 0 0 18px;padding:0}
+.eng-ro{font-size:11.5px;color:var(--text-muted)}
 
 /* ENGENHEIROS */
 .eng-input{background:var(--bg-input);border:1px solid var(--border);border-radius:6px;padding:7px 10px;color:var(--text-primary);font-size:13px;font-family:inherit;outline:none;min-width:160px}
@@ -542,10 +551,11 @@ input::placeholder,textarea::placeholder{color:var(--text-dim)}
     <div class="logo-foto"><svg aria-hidden="true" viewBox="0 0 64 64"><rect width="64" height="64" rx="16" fill="#0F172A"/><g transform="translate(9 9) scale(0.72)"><path d="M52 32a20 20 0 1 1-6-14.3" fill="none" stroke="#60A5FA" stroke-width="6.5" stroke-linecap="round"/><path d="M47 7.5v10.5h-10.5" fill="none" stroke="#60A5FA" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="32" cy="32" r="8.5" fill="#FFFFFF"/></g></svg></div>
     <div>
       <div class="logo-title">Controle de Pagamento</div>
-      <div class="logo-sub">Gustavo Ferreira</div>
+      <div class="logo-sub" id="logoSub">Gustavo Ferreira</div>
     </div>
   </div>
   <div class="topbar-actions">
+    <select class="btn espaco-sel" id="selEspaco" style="display:none" onchange="abrirEspaco(this.value)" title="De quem é a área que você está vendo"></select>
     <button class="tema-btn" type="button" onclick="alternarTema()">☀️</button>
     <span class="nuvem" id="nuvemStatus" onclick="if(this.classList.contains('erro')) sincronizar()">☁️ Conectando…</span>
     <button class="btn" onclick="abrirImportacao()" title="Importar os lançamentos da semana (arquivo gerado pelo Claude) ou migrar o CONTROLE_DADOS.json">📥 Importar arquivo</button>
@@ -555,10 +565,12 @@ input::placeholder,textarea::placeholder{color:var(--text-dim)}
     <button class="btn" onclick="openRetorno()" title="Marcar no Controle o que o script vinculou no sistema">↩ Colar retorno</button>
     <button class="btn outline-red" onclick="gerarPDF()">📄 Relatório PDF</button>
     <button class="btn primary" onclick="openNovoEnvio()">+ Novo Envio</button>
-    <button class="btn" onclick="trocarPinAdmin()" title="Trocar o seu PIN de administrador">🔑 Meu PIN</button>
+    <button class="btn" onclick="trocarPinAdmin()" title="Trocar o seu PIN">🔑 Meu PIN</button>
     <button class="btn" onclick="sairAdmin()" title="Sair deste aparelho">Sair</button>
   </div>
 </div>
+
+<div class="faixa-espaco" id="faixaEspaco" style="display:none"></div>
 
 <!-- ABAS -->
 <div class="tabs">
@@ -893,7 +905,7 @@ function verificar() {
         e.html = String(e.html).replace('%CONVERSA%', nota);
         conv = null;   // no modo teste nunca responde a conversa verdadeira
       }
-      enviar(e, conv, eu, d.responderPara);
+      enviar(e, conv, eu, e.responder || d.responderPara);
       r.ok = true;
       r.conversa = e.teste ? 'teste' : conv ? 'respondeu o e-mail de sexta' : 'e-mail novo';
     } catch (err) {
@@ -3141,22 +3153,84 @@ async function iniciarNuvem() {
   else irParaEntrada();   // sem sessão: volta para a tela do PIN
 }
 
+// ---------- PERFIS: líder (vê tudo) e comprador (só a área dele) ----------
+let PAPEL = null;      // { papel: 'lider' | 'comprador', email, nome, compradores, donos, obras, lembretes }
+let ESPACO = '';       // '' = área do líder; e-mail = área daquele comprador
+let falta08 = false;   // true enquanto o 08_compradores.sql não foi rodado no Supabase
+const ESPACO_KEY = 'mph_espaco_v1';
+const CFG_GLOBAIS = ['lembretes', 'lembretes_estado'];
+const chaveCfg = k => ESPACO && !CFG_GLOBAIS.includes(k) ? `c:${ESPACO}:${k}` : k;
+const ehComprador = () => !!PAPEL && PAPEL.papel === 'comprador';
+const temCompradores = () => !!PAPEL && Array.isArray(PAPEL.compradores) && PAPEL.compradores.length > 0;
+const nomeComprador = email => ((PAPEL?.compradores || []).find(c => c.email === email) || {}).nome || email;
+const meuNome = () => ehComprador() ? (PAPEL.nome || 'Comprador') : 'Gustavo Ferreira';
+// de quem é a obra: '' = líder
+const donoObra = o => (PAPEL?.donos || {})[o] || '';
+// engenheiro aparece na área se tem alguma obra dela (sem obra: na área de quem criou)
+function engDoEspaco(e) {
+  if (ehComprador() || !temCompradores()) return true;
+  if (!e.obras.length) { const c = (PAPEL.compradores || []).some(x => x.email === e.criadoPor) ? e.criadoPor : ''; return c === ESPACO; }
+  return e.obras.some(o => donoObra(o) === ESPACO);
+}
+
+async function lerPapel() {
+  const r = await sb.rpc('meu_papel');
+  if (!r.error) { falta08 = false; return r.data || { papel: null }; }
+  if (/JWT|auth/i.test(r.error.message)) return { papel: null };
+  // 08 ainda não rodado: só existe o admin
+  const a = await sb.rpc('eh_admin');
+  if (a.error) throw a.error;
+  falta08 = true;
+  return a.data ? { papel: 'lider', compradores: [], donos: {} } : { papel: null };
+}
+
+function aplicarPapel() {
+  if (ehComprador()) ESPACO = PAPEL.email;
+  else {
+    let salvo = ''; try { salvo = localStorage.getItem(ESPACO_KEY) || ''; } catch (e) {}
+    ESPACO = (PAPEL.compradores || []).some(c => c.email === salvo) ? salvo : '';
+  }
+  document.body.classList.toggle('comprador', ehComprador());
+  document.getElementById('logoSub').textContent = meuNome();
+  const sel = document.getElementById('selEspaco');
+  if (!ehComprador() && temCompradores()) {
+    sel.innerHTML = `<option value="">👤 Minha área</option>` + PAPEL.compradores.map(c => `<option value="${escHtml(c.email)}">🧑‍💼 ${escHtml(c.nome)}${c.ativo ? '' : ' (inativo)'}</option>`).join('');
+    sel.value = ESPACO; sel.style.display = '';
+  } else sel.style.display = 'none';
+  const faixa = document.getElementById('faixaEspaco');
+  if (!ehComprador() && ESPACO) {
+    faixa.innerHTML = `👁️ Você está na área de <strong>${escHtml(nomeComprador(ESPACO))}</strong>: o que fizer aqui fica na área dela(e). <button class="btn sm" onclick="abrirEspaco('')">Voltar para a minha área</button>`;
+    faixa.style.display = '';
+  } else faixa.style.display = 'none';
+}
+
+// o líder abre a área de um comprador (ou volta para a dele)
+function abrirEspaco(email) {
+  if (temAlteracaoPendente()) { sincronizar(); alert('Salvando as últimas alterações… clique de novo em instantes.'); document.getElementById('selEspaco').value = ESPACO; return; }
+  try { localStorage.setItem(ESPACO_KEY, email || ''); } catch (e) {}
+  location.reload();
+}
+
 async function aposLogin() {
-  const { data: ehAdmin, error } = await sb.rpc('eh_admin');
-  if (error || !ehAdmin) {
-    if (error && !/JWT|auth/i.test(error.message)) { mostrarLogin('Erro ao conferir o acesso: ' + error.message); return; }
+  let papel;
+  try { papel = await lerPapel(); }
+  catch (e) { mostrarLogin('Erro ao conferir o acesso: ' + (e.message || e)); return; }
+  if (!papel || !papel.papel) {
     await sb.auth.signOut();
     irParaEntrada();
     return;
   }
+  PAPEL = papel;
+  aplicarPapel();
   try { await carregarNuvem(); await carregarRespostas(); await carregarAnexos(); }
   catch (e) { mostrarLogin('Não consegui ler os dados da nuvem: ' + e.message); return; }
   document.getElementById('loginBg').classList.remove('open');
   document.body.classList.remove('bloqueado');
-  if (!obrasCad) { obrasCad = [...new Set([...obrasFixas(), ...allNFs().map(n => n.obra).filter(Boolean)])]; salvarConfig('obras', obrasCad); }
+  if (!obrasCad) { obrasCad = [...new Set([...(ESPACO ? [] : obrasFixas()), ...allNFs().map(n => n.obra).filter(Boolean)])]; salvarConfig('obras', obrasCad); }
   desenharTudo();
   statusNuvem('ok');
-  if (!envios.length) setTimeout(() => alert('A nuvem ainda está vazia.\n\nPara trazer os dados que estavam no seu navegador: abra o Controle antigo, clique em "💾 Salvar na pasta" e depois, aqui, em "📥 Importar arquivo" escolha o CONTROLE_DADOS.json.'), 300);
+  if (ESPACO) { if (!envios.length) setTimeout(() => alert(`Bem-vinda(o) à área ${ehComprador() ? 'de ' + meuNome() : 'de ' + nomeComprador(ESPACO)}!\n\nPor onde começar:\n1. Aba 🏗️ Obras: cadastre as suas obras e o caminho da pasta de cada uma.\n2. Aba 👥 Usuários: cadastre os engenheiros das suas obras (com o e-mail) e mande o convite do PIN.\n3. Toda semana: + Novo Envio e + NF para lançar as notas.`), 300); }
+  else if (!envios.length) setTimeout(() => alert('A nuvem ainda está vazia.\n\nPara trazer os dados que estavam no seu navegador: abra o Controle antigo, clique em "💾 Salvar na pasta" e depois, aqui, em "📥 Importar arquivo" escolha o CONTROLE_DADOS.json.'), 300);
 }
 
 function desenharTudo() {
@@ -3170,12 +3244,20 @@ function desenharTudo() {
 }
 
 async function carregarNuvem() {
-  const [r1, r2] = await Promise.all([sb.from('envios').select('id,data,obs,nfs'), sb.from('config').select('chave,valor')]);
+  // só os envios e as configurações da área aberta
+  let qEnv = sb.from('envios').select('id,data,obs,nfs');
+  if (!falta08) qEnv = ESPACO ? qEnv.eq('comprador', ESPACO) : qEnv.is('comprador', null);
+  const [r1, r2] = await Promise.all([qEnv, sb.from('config').select('chave,valor')]);
   if (r1.error) throw r1.error;
   if (r2.error) throw r2.error;
   envios = r1.data.map(r => ({ id: r.id, data: r.data || '', obs: r.obs || '', nfs: Array.isArray(r.nfs) ? r.nfs : [] }));
   sincronizado = new Map(envios.map(e => [e.id, serializarEnvio(e)]));
-  const cfg = Object.fromEntries(r2.data.map(r => [r.chave, r.valor]));
+  const pre = ESPACO ? `c:${ESPACO}:` : '';
+  const cfg = {};
+  for (const r of r2.data) {
+    if (pre) { if (r.chave.startsWith(pre)) cfg[r.chave.slice(pre.length)] = r.valor; }
+    else if (!r.chave.startsWith('c:')) cfg[r.chave] = r.valor;
+  }
   pastas = cfg.pastas || {};
   aliasObras = cfg.alias || {};
   nomesSistema = cfg.nomeSistema || {};
@@ -3206,7 +3288,7 @@ async function sincronizar() {
   try {
     const atuais = new Map(envios.map(e => [e.id, serializarEnvio(e)]));
     const mudaram = envios.filter(e => atuais.get(e.id) !== sincronizado.get(e.id))
-      .map(e => ({ id: e.id, data: e.data || null, obs: e.obs || '', nfs: e.nfs || [], atualizado_em: new Date().toISOString() }));
+      .map(e => ({ id: e.id, data: e.data || null, obs: e.obs || '', nfs: e.nfs || [], atualizado_em: new Date().toISOString(), ...(falta08 ? {} : { comprador: ESPACO || null }) }));
     const removidos = [...sincronizado.keys()].filter(id => !atuais.has(id));
     if (mudaram.length) { const { error } = await sb.from('envios').upsert(mudaram); if (error) throw error; }
     if (removidos.length) { const { error } = await sb.from('envios').delete().in('id', removidos); if (error) throw error; }
@@ -3223,7 +3305,7 @@ async function sincronizar() {
 async function salvarConfig(chave, valor) {
   if (!sb) return;
   statusNuvem('salvando');
-  const { error } = await sb.from('config').upsert({ chave, valor, atualizado_em: new Date().toISOString() });
+  const { error } = await sb.from('config').upsert({ chave: chaveCfg(chave), valor, atualizado_em: new Date().toISOString() });
   if (error) statusNuvem('erro', error.message); else if (!syncTimer && !syncando) statusNuvem('ok');
 }
 
@@ -3345,12 +3427,20 @@ let engenheiros = [];
 let falta07 = false;   // true enquanto o 07_cobranca.sql não foi rodado no Supabase
 
 async function carregarEngenheiros() {
-  let { data, error } = await sb.from('engenheiros').select('id,nome,obras,ativo,pin_hash,email,email_copia,ultimo_acesso,acessos').order('nome');
+  let { data, error } = await sb.from('engenheiros').select('id,nome,obras,ativo,tem_pin,criado_por,email,email_copia,ultimo_acesso,acessos').order('nome');
+  if (error) ({ data, error } = await sb.from('engenheiros').select('id,nome,obras,ativo,pin_hash,email,email_copia,ultimo_acesso,acessos').order('nome'));   // SQL 08 ainda não rodado
   falta07 = !!error;
   if (error) ({ data, error } = await sb.from('engenheiros').select('id,nome,obras,ativo,pin_hash').order('nome'));   // SQL 07 ainda não rodado
   if (error) throw error;
-  engenheiros = data.map(e => ({ id: e.id, nome: e.nome, obras: e.obras || [], ativo: e.ativo, temPin: !!e.pin_hash,
-    email: e.email || '', emailCopia: e.email_copia || '', ultimoAcesso: e.ultimo_acesso || null, acessos: e.acessos || 0 }));
+  engenheiros = data.map(e => ({ id: e.id, nome: e.nome, obras: e.obras || [], ativo: e.ativo, temPin: e.tem_pin ?? !!e.pin_hash,
+    criadoPor: e.criado_por || '', email: e.email || '', emailCopia: e.email_copia || '', ultimoAcesso: e.ultimo_acesso || null, acessos: e.acessos || 0 }));
+}
+// o comprador edita só engenheiro que ele criou ou que é só de obras dele (o banco confere de novo)
+function engEditavel(e) {
+  if (!ehComprador()) return true;
+  if (e.criadoPor === PAPEL.email) return true;
+  const minhas = new Set([...(PAPEL.obras || []), ...listaObras()]);
+  return e.obras.length > 0 && e.obras.every(o => minhas.has(o));
 }
 
 async function renderEng() {
@@ -3360,8 +3450,10 @@ async function renderEng() {
   catch (e) { view.innerHTML = `<div class="pastas-wrap"><div class="info-card">Não consegui ler os usuários: ${escHtml(e.message)}</div></div>`; return; }
   const link = location.origin + location.pathname.replace(/[^/]*$/, '');
   const obrasTodas = listaObras();
+  const visiveis = engenheiros.filter(engDoEspaco);
   view.innerHTML = `
   <div class="pastas-wrap">
+    ${!ehComprador() && !falta08 ? htmlCompradores() : ''}
     <div class="info-card">
       Cada usuário entra em <span class="path">${escHtml(link)}</span> com o próprio <strong>PIN</strong> (pelo menos 5 caracteres — letras, números ou símbolos; sem sequência) e vê só as obras marcadas para ele:
       os lançamentos <strong>vinculados</strong> e os que <strong>precisam resolver</strong> (Sem OC, OC Negativada, Falta Apropriação). Ele só consulta, não altera nada.<br>
@@ -3374,14 +3466,21 @@ async function renderEng() {
       <input class="eng-input" id="engNovoNome" placeholder="Nome do usuário" onkeydown="if(event.key==='Enter') addEng()">
       <button class="btn primary" onclick="addEng()">+ Adicionar usuário</button>
     </div>
-    ${engenheiros.length ? `
+    ${temCompradores() && !ehComprador() ? `<div class="cob-muted" style="margin:0 0 8px">Mostrando os engenheiros das obras ${ESPACO ? 'da área de <strong>' + escHtml(nomeComprador(ESPACO)) + '</strong>' : 'da <strong>sua área</strong>'}.</div>` : ''}
+    ${visiveis.length ? `
     <div class="envio-card" style="overflow:visible">
       <div class="tbl-wrap">
       <table class="pastas-tbl">
         <thead><tr><th>Usuário</th><th style="width:100%">Obras que ele vê</th><th>E-mail para os lembretes</th><th>PIN</th><th>Ativo</th><th></th></tr></thead>
         <tbody>
-        ${engenheiros.map(e => {
+        ${visiveis.map(e => {
           const lista = [...new Set([...obrasTodas, ...e.obras])].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+          if (!engEditavel(e)) return `<tr>
+          <td><strong>${escHtml(e.nome)}</strong><div class="eng-acesso">${textoAcesso(e)}</div></td>
+          <td>${escHtml(e.obras.join(', '))}<div class="eng-ro">Também atende obras de outro comprador: alterações com o Gustavo.</div></td>
+          <td>${escHtml(e.email || '—')}</td>
+          <td>${e.temPin ? '<span class="badge pago">✓ definido</span>' : '<span class="badge alerta">sem PIN</span>'}</td>
+          <td style="text-align:center">${e.ativo ? '✓' : '—'}</td><td></td></tr>`;
           return `<tr>
           <td><input class="eng-input" value="${escHtml(e.nome)}" data-id="${e.id}" onchange="renomearEng(this)">
             <div class="eng-acesso">${textoAcesso(e)}</div></td>
@@ -3537,6 +3636,11 @@ function novoToken() {
   return Array.from(b, x => x.toString(16).padStart(2, '0')).join('');
 }
 async function carregarLembretes() {
+  if (ehComprador()) {   // o comprador só usa os prazos (a configuração dos lembretes é do líder)
+    lemCfg = { ...lemPadrao(), ...(PAPEL.lembretes || {}), emailGustavo: PAPEL.email, token: '' };
+    lemEstado = {}; lemHist = [];
+    return;
+  }
   const { data, error } = await sb.from('config').select('chave,valor').in('chave', ['lembretes', 'lembretes_estado']);
   if (error) throw error;
   const m = Object.fromEntries((data || []).map(r => [r.chave, r.valor]));
@@ -3575,6 +3679,65 @@ function metricasEng(e) {
   return { comEle, esperandoVoce, nunca, maisAntiga, media, ultimaResp, resp30, nivel, lem, esc };
 }
 
+// ---------- COMPRADORES (só o líder) ----------
+function htmlCompradores() {
+  const lista = PAPEL.compradores || [];
+  const donos = PAPEL.donos || {};
+  const obrasDe = email => Object.keys(donos).filter(o => donos[o] === email).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  const link = location.origin + location.pathname.replace(/[^/]*$/, '');
+  return `
+    <div class="envio-card" style="overflow:visible;margin-bottom:16px">
+      <div class="cob-tit">🧑‍💼 Compradores <span>cada um entra no mesmo link com e-mail + PIN e vê só a área dele: obras, envios, engenheiros e cobranças</span></div>
+      <div class="tbl-wrap">
+      <table class="pastas-tbl comp-tbl">
+        <thead><tr><th>Comprador</th><th>E-mail (login)</th><th style="width:100%">Obras</th><th class="c">Envios</th><th>Último envio</th><th>Ativo</th><th></th></tr></thead>
+        <tbody>
+        ${lista.map(c => { const ob = obrasDe(c.email); return `<tr>
+          <td><strong>${escHtml(c.nome)}</strong></td>
+          <td>${escHtml(c.email)}</td>
+          <td>${ob.length ? escHtml(ob.join(', ')) : '<span class="cob-muted">nenhuma ainda</span>'}</td>
+          <td class="c">${c.envios || 0}</td>
+          <td>${c.ultimo ? fmtDate(c.ultimo) : '—'}</td>
+          <td style="text-align:center"><input type="checkbox" class="link-check" data-email="${escHtml(c.email)}" ${c.ativo ? 'checked' : ''} onchange="ativarComprador(this)"></td>
+          <td style="white-space:nowrap">${ESPACO === c.email ? '<span class="cob-muted">área aberta</span>' : `<button class="btn sm" data-email="${escHtml(c.email)}" onclick="abrirEspaco(this.dataset.email)" title="Ver e trabalhar na área deste comprador">👁️ Abrir área</button>`}</td>
+        </tr>`; }).join('') || '<tr><td colspan="7" class="cob-muted">Nenhum comprador cadastrado.</td></tr>'}
+        </tbody>
+      </table>
+      </div>
+      <div class="eng-novo" style="margin-top:10px">
+        <input class="eng-input" id="compNome" placeholder="Nome (ex.: Gisele)">
+        <input class="eng-input" id="compEmail" type="email" placeholder="e-mail da empresa" onkeydown="if(event.key==='Enter') addComprador()">
+        <button class="btn primary" onclick="addComprador()">+ Adicionar comprador</button>
+      </div>
+      <details class="comp-passos"><summary>Como dar o acesso (uma vez por comprador)</summary>
+        <ol>
+          <li>Adicione o comprador aqui (nome e e-mail).</li>
+          <li>No Supabase: <strong>Authentication → Users → Add user → Create new user</strong>. E-mail: o mesmo daqui. Password: um PIN inicial (6+ caracteres). Marque <strong>Auto Confirm User</strong>.</li>
+          <li>Mande para ele o link <span class="path">${escHtml(link)}</span>, o e-mail e o PIN inicial. Na 1ª vez ele clica em <strong>Sou comprador(a)</strong>, digita o e-mail e o PIN; depois troca o PIN em 🔑 Meu PIN.</li>
+        </ol>
+      </details>
+    </div>`;
+}
+async function recarregarPapel() {
+  try { PAPEL = await lerPapel(); aplicarPapel(); } catch (e) { /* mantém o que tinha */ }
+}
+async function addComprador() {
+  const nome = document.getElementById('compNome').value.trim();
+  const email = document.getElementById('compEmail').value.trim().toLowerCase();
+  if (!nome) { document.getElementById('compNome').focus(); return; }
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { alert('Digite o e-mail da empresa do comprador.'); document.getElementById('compEmail').focus(); return; }
+  const { error } = await sb.from('compradores').insert({ nome, email });
+  if (error) { alert('Não consegui adicionar: ' + error.message); return; }
+  await recarregarPapel();
+  await renderEng();
+  alert(`${nome} adicionado(a).\n\nFalta criar o login no Supabase:\nAuthentication → Users → Add user → Create new user\nE-mail: ${email}\nPassword: o PIN inicial (6+ caracteres)\nMarque "Auto Confirm User".`);
+}
+async function ativarComprador(cb) {
+  const { error } = await sb.from('compradores').update({ ativo: cb.checked }).eq('email', cb.dataset.email);
+  if (error) { alert('Não consegui salvar: ' + error.message); cb.checked = !cb.checked; return; }
+  await recarregarPapel();
+}
+
 async function renderCob() {
   const view = document.getElementById('viewCob');
   if (!lemCfg) view.innerHTML = '<div class="pastas-wrap"><div class="info-card">Carregando…</div></div>';
@@ -3582,7 +3745,7 @@ async function renderCob() {
   catch (e) { view.innerHTML = `<div class="pastas-wrap"><div class="info-card">Não consegui carregar: ${escHtml(e.message)}</div></div>`; return; }
   if (!anexosIds.size) carregarAnexos();
 
-  const ativos = engenheiros.filter(e => e.ativo);
+  const ativos = engenheiros.filter(e => e.ativo && engDoEspaco(e));
   const linhas = ativos.map(e => ({ e, m: metricasEng(e) }))
     .sort((a, b) => b.m.nivel - a.m.nivel || b.m.maisAntiga - a.m.maisAntiga || b.m.comEle.length - a.m.comEle.length);
   const lem = Number(lemCfg.diasLembrete), esc = lem + Number(lemCfg.diasEscalar);   // 2º aviso = lembrete + X dias
@@ -3633,8 +3796,23 @@ async function renderCob() {
       </table>
       </div>
     </div>
-    ${falta07 ? '' : htmlLembretes(ativos)}
+    ${falta07 ? '' : ehComprador() ? htmlLembretesComprador(ativos) : htmlLembretes(ativos)}
   </div>`;
+}
+// o comprador vê o e-mail de sexta; os lembretes saem sozinhos (configuração do líder)
+function htmlLembretesComprador(ativos) {
+  const c = lemCfg || {};
+  const DIAS = ['', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado', 'domingo'];
+  const dias = (c.dias || [1]).map(d => DIAS[d]).filter(Boolean).join(', ');
+  return `
+    <div class="envio-card" style="overflow:visible">
+      <div class="cob-tit">✉️ Lembretes automáticos por e-mail <span>um por obra e por envio, respondendo o seu e-mail de sexta da obra</span></div>
+      <div class="cob-lem">
+        ${htmlSexta(ativos)}
+        <div class="cob-status">${c.modo === 'ligado' ? '<span class="badge pago">✓ ligados</span>' : '<span class="badge alerta">desligados no momento</span>'}
+          <span class="cob-muted">Saem sozinhos pelo Gmail do Controle (${escHtml((window.MPH_CONFIG || {}).adminEmail || '')})${dias ? ', nos dias: ' + dias : ''}. 1º lembrete ${Number(c.diasLembrete ?? 3)} dias depois do envio; 2º aviso ${Number(c.diasEscalar ?? 7)} dias depois do lembrete, com o coordenador em cópia. Você vai em cópia nos das suas obras.</span></div>
+      </div>
+    </div>`;
 }
 
 // ajuda para o e-mail de sexta (um por obra): o lembrete responde nele se o Gmail do Controle estiver em Cc
@@ -3978,7 +4156,7 @@ async function carregarRespostas() {
   if (!sb) return;
   const { data, error } = await sb.from('respostas').select('*').order('criado_em', { ascending: false }).limit(3000);
   if (error) { console.warn('respostas:', error.message); return; }
-  respostas = (data || []).reverse();
+  respostas = (data || []).filter(r => ehComprador() || !temCompradores() || donoObra(r.obra) === ESPACO).reverse();
   atualizarBadgeResp();
 }
 const ehEng = r => r.tipo !== 'gustavo';
@@ -4137,7 +4315,7 @@ async function responderConversa(k) {
   if (!texto) { inp && inp.focus(); return; }
   const c = conversaPorChave(k);
   if (!c) return;
-  const nova = { engenheiro_nome: 'Gustavo', obra: c.obra, nf_id: c.nf_id || null, nf_resumo: c.resumo || null, tipo: 'gustavo', texto, status: 'aplicada' };
+  const nova = { engenheiro_nome: ehComprador() ? primeiroNome(meuNome()) : 'Gustavo', obra: c.obra, nf_id: c.nf_id || null, nf_resumo: c.resumo || null, tipo: 'gustavo', texto, status: 'aplicada' };
   const { data, error } = await sb.from('respostas').insert(nova).select('*').single();
   if (error) { alert('Não consegui enviar: ' + error.message); return; }
   respostas.push(data);
@@ -4284,7 +4462,8 @@ async function anexarPendentes() {
   for (const e of envios) for (const n of e.nfs || []) if (pendenteNF(n) && !anexosIds.has(n.id)) lista.push({ n, envio: e });
   // tira PDFs de cobranças que não estão mais pendentes (o engenheiro já não vê)
   const pendentes = new Set(allNFs().filter(pendenteNF).map(n => n.id));
-  const sobrando = [...anexosIds].filter(id => !pendentes.has(id));
+  const idsAqui = new Set(allNFs().map(n => n.id));   // com compradores, só mexe nos PDFs da área aberta
+  const sobrando = [...anexosIds].filter(id => !pendentes.has(id) && (ehComprador() || !temCompradores() || idsAqui.has(id)));
   if (sobrando.length) { const { error } = await sb.from('anexos').delete().in('nf_id', sobrando); if (!error) sobrando.forEach(id => anexosIds.delete(id)); }
   if (!lista.length) { renderEnvios(); alert('✅ Todas as cobranças em "Precisa resolver" já têm o PDF anexado.'); return; }
   statusNuvem('salvando');
